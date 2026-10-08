@@ -8,8 +8,16 @@ environment:
 
 # Add regular dependencies here.
 dependencies:
-  # path: ^1.9.0
-
+  flutter:
+    sdk: flutter
+  drift: ^2.28.1
+  sqlite3_flutter_libs: ^0.5.28
+  path_provider: ^2.1.1        # Để lấy path lưu database
+  path: ^1.9.0
+  
 dev_dependencies:
-  lints: ^6.0.0
-  test: ^1.25.6
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.5.4
+  drift_dev: ^2.28.1
