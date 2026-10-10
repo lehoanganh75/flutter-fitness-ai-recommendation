@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'src/app/app_dependencies.dart';
-import 'src/presentation/screens/today_workout_screen.dart';
+import 'src/app/auth_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +40,8 @@ class FitnessRecommendationApp extends StatelessWidget {
           fillColor: Colors.white,
         ),
       ),
-      home: TodayWorkoutScreen(
+      home: AuthGate(
+        authController: dependencies.authController,
         workoutService: dependencies.workoutService,
         logSetService: dependencies.logSetService,
         userId: 'sample-user',
