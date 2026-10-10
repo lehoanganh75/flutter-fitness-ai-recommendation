@@ -1,6 +1,6 @@
-import 'package:fitness_recommendation/src/domain/recommendation_validator.dart';
+import 'package:fitness_recommendation/src/services/recommendation_validator.dart';
 
-import '../domain/recommendation.dart';
+import '../domain/models/recommendation.dart';
 
 class RecommendationContext {
   const RecommendationContext({

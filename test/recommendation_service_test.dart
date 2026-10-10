@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fitness_recommendation/src/domain/recommendation.dart';
+import 'package:fitness_recommendation/src/domain/models/recommendation.dart';
 import 'package:fitness_recommendation/src/services/recommendation_service.dart';
 
 class FakeRecommendationProvider implements RecommendationProvider {

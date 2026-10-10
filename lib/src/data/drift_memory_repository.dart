@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
-import '../domain/memory.dart' as domain;
+import '../domain/models/memory.dart' as domain;
 import '../domain/repositories/memory_repository.dart';
 import 'database.dart' as data;
 

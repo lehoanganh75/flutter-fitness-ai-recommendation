@@ -1,4 +1,4 @@
-import 'package:fitness_recommendation/domain/workout.dart';
+import 'package:fitness_recommendation/src/domain/models/workout.dart';
 
 abstract interface class WorkoutRepository {
   Future<List<WorkoutPlan>> plansForDay(String userId, int dayOfWeek);

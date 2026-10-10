@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fitness_recommendation/src/domain/recommendation.dart';
+import 'package:fitness_recommendation/src/domain/models/recommendation.dart';
 
 void main() {
   test('encodes recommendation as stable JSON contract', () {

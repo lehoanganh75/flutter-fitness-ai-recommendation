@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_recommendation/src/domain/repositories/workout_repository.dart';
-import 'package:fitness_recommendation/domain/workout.dart';
+import 'package:fitness_recommendation/src/domain/models/workout.dart';
 
 class FakeWorkoutRepository implements WorkoutRepository {
   final plans = <WorkoutPlan>[];

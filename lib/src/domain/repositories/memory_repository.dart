@@ -1,4 +1,4 @@
-import '../memory.dart';
+import '../models/memory.dart';
 
 abstract interface class MemoryRepository {
   Future<void> save(Memory memory);
