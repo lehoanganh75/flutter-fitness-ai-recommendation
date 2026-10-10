@@ -33,10 +33,71 @@ class Memories extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [Memories])
+@DriftDatabase(tables: [Memories, WorkoutPlans, PlannedExercises, LoggedSets])
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 3;
+}
+
+class WorkoutPlans extends Table {
+  TextColumn get id => text()();
+
+  TextColumn get userId => text()();
+
+  TextColumn get title => text()();
+
+  IntColumn get dayOfWeek => integer()();
+
+  DateTimeColumn get createdAt => dateTime()();
+
+  TextColumn get syncStatus => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class PlannedExercises extends Table {
+  TextColumn get id => text()();
+
+  TextColumn get planId => text()();
+
+  TextColumn get exercise => text()();
+
+  TextColumn get muscleGroup => text()();
+
+  IntColumn get sortOrder => integer()();
+
+  IntColumn get targetSets => integer()();
+
+  IntColumn get targetReps => integer()();
+
+  RealColumn get initialWeight => real()();
+
+  TextColumn get syncStatus => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class LoggedSets extends Table {
+  TextColumn get id => text()();
+
+  TextColumn get exerciseId => text()();
+
+  IntColumn get setIndex => integer()();
+
+  RealColumn get weight => real()();
+
+  IntColumn get reps => integer()();
+
+  TextColumn get feedbackText => text().nullable()();
+
+  DateTimeColumn get loggedAt => dateTime()();
+
+  TextColumn get syncStatus => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
 }
