@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 
-import 'package:fitness_recommendation/domain/workout.dart' as domain;
+import 'package:fitness_recommendation/src/domain/models/workout.dart'
+    as domain;
 import 'package:fitness_recommendation/src/domain/repositories/workout_repository.dart';
 
 import 'database.dart' as data;

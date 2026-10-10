@@ -1,5 +1,5 @@
-import '../domain/memory.dart';
-import '../domain/workout_event.dart';
+import '../domain/models/memory.dart';
+import '../domain/models/workout_event.dart';
 
 class MemoryExtractor {
   static Memory? extract(SetFeedbackEvent event) {

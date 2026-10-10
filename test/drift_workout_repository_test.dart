@@ -2,7 +2,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_recommendation/src/data/database.dart' as data;
 import 'package:fitness_recommendation/src/data/drift_workout_repository.dart';
-import 'package:fitness_recommendation/domain/workout.dart' as domain;
+import 'package:fitness_recommendation/src/domain/models/workout.dart'
+    as domain;
 
 void main() {
   late data.AppDatabase database;

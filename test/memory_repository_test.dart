@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fitness_recommendation/src/domain/memory.dart';
+import 'package:fitness_recommendation/src/domain/models/memory.dart';
 import 'package:fitness_recommendation/src/domain/repositories/memory_repository.dart';
 
 class FakeMemoryRepository implements MemoryRepository {

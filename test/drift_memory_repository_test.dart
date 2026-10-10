@@ -2,7 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_recommendation/src/data/database.dart' as data;
 import 'package:fitness_recommendation/src/data/drift_memory_repository.dart';
-import 'package:fitness_recommendation/src/domain/memory.dart' as domain;
+import 'package:fitness_recommendation/src/domain/models/memory.dart' as domain;
 
 void main() {
   late data.AppDatabase database;

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fitness_recommendation/domain/workout.dart';
-import 'package:fitness_recommendation/domain/workout_progress.dart';
-import 'package:fitness_recommendation/domain/today_workout.dart';
+import 'package:fitness_recommendation/src/domain/models/workout.dart';
+import 'package:fitness_recommendation/src/domain/models/workout_progress.dart';
+import 'package:fitness_recommendation/src/domain/models/today_workout.dart';
 
 void main() {
   test('creates today workout plan with pending sync status', () {
@@ -180,6 +180,7 @@ void main() {
           initialWeight: 25,
         ),
       ],
+      loggedSetsByExercise: {},
     );
 
     expect(workout.plan.title, 'Push Day');
@@ -219,6 +220,7 @@ void main() {
           initialWeight: 50,
         ),
       ],
+      loggedSetsByExercise: {},
     );
 
     final activeExercise = workout.activeExercise(
@@ -278,6 +280,7 @@ void main() {
           initialWeight: 50,
         ),
       ],
+      loggedSetsByExercise: {},
     );
 
     final activeExercise = workout.activeExercise(
@@ -321,6 +324,7 @@ void main() {
           initialWeight: 50,
         ),
       ],
+      loggedSetsByExercise: {},
     );
 
     final progress = workout.activeProgress(
@@ -365,7 +369,11 @@ void main() {
       initialWeight: 50,
     );
 
-    final workout = TodayWorkout(plan: plan, exercises: [exercise]);
+    final workout = TodayWorkout(
+      plan: plan,
+      exercises: [exercise],
+      loggedSetsByExercise: {},
+    );
 
     final currentWeight = workout.currentWeightFor(
       exercise: exercise,
@@ -413,7 +421,11 @@ void main() {
       initialWeight: 50,
     );
 
-    final workout = TodayWorkout(plan: plan, exercises: [exercise]);
+    final workout = TodayWorkout(
+      plan: plan,
+      exercises: [exercise],
+      loggedSetsByExercise: {},
+    );
 
     final currentWeight = workout.currentWeightFor(
       exercise: exercise,

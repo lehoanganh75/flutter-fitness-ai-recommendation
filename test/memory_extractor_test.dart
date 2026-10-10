@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fitness_recommendation/src/domain/memory.dart';
-import 'package:fitness_recommendation/src/domain/workout_event.dart';
+import 'package:fitness_recommendation/src/domain/models/memory.dart';
+import 'package:fitness_recommendation/src/domain/models/workout_event.dart';
 import 'package:fitness_recommendation/src/services/memory_extractor.dart';
 
 SetFeedbackEvent createEvent(String feedback, {DateTime? timestamp}) {
