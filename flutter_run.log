@@ -1,0 +1,69 @@
+Launching lib\main.dart on sdk gphone16k x86 64 in debug mode...
+Running Gradle task 'assembleDebug'...                          
+Running Gradle task 'assembleDebug'...                             22.4s
+√ Built build\app\outputs\flutter-apk\app-debug.apk
+Installing build\app\outputs\flutter-apk\app-debug.apk...        1,357ms
+I/FlutterActivityAndFragmentDelegate(23026): If you are attempting to set --enable-dart-profiling via Intent extras to launch a Flutter component outside of using the Flutter CLI, note that support for setting engine flags on Android via Intent will soon be dropped; see https://github.com/flutter/flutter/issues/180686 for more information on this breaking change. To migrate, set --enable-dart-profiling or any other flags specified via Intent extras on the command line instead or see https://github.com/flutter/flutter/blob/main/docs/engine/Flutter-Android-Engine-Flags.md for alternative methods.
+D/FlutterJNI(23026): Beginning load of flutter...
+D/FlutterJNI(23026): flutter (null) was loaded normally!
+I/flutter (23026): [IMPORTANT:flutter/shell/platform/android/android_context_gl_impeller.cc(104)] Using the Impeller rendering backend (OpenGLES).
+D/FlutterRenderer(23026): Width is zero. 0,0
+Syncing files to device sdk gphone16k x86 64...                    427ms
+
+Flutter run key commands.
+r Hot reload. 
+R Hot restart.
+h List all available interactive commands.
+d Detach (terminate "flutter run" but leave application running).
+c Clear the screen
+q Quit (terminate the application on the device).
+
+A Dart VM Service on sdk gphone16k x86 64 is available at: http://127.0.0.1:58987/XtJCL_1JrG8=/
+The Flutter DevTools debugger and profiler on sdk gphone16k x86 64 is available at: http://127.0.0.1:58987/XtJCL_1JrG8=/devtools/?uri=ws://127.0.0.1:58987/XtJCL_1JrG8=/ws
+I/Choreographer(23026): Skipped 144 frames!  The application may be doing too much work on its main thread.
+D/WindowOnBackDispatcher(23026): setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@3e03c11
+D/WindowOnBackDispatcher(23026): setOnBackInvokedCallbackInfo: android.app.Activity$$ExternalSyntheticLambda0@3e03c11
+I/WindowExtensionsImpl(23026): Initializing Window Extensions, vendor API level=10, activity embedding enabled=true
+I/_recommendation(23026): Compiler allocated 4529KB to compile void android.view.ViewRootImpl.performTraversals(long)
+W/UiContextUtils(23026): Requested context is a non-UI Context. Creating a UI-Context with display: 0. Context: Context=android.app.Application@eba2815, of which baseContext=android.app.ContextImpl@b1d6875
+D/VRI[MainActivity](23026): WindowInsets changed: 720x1280 statusBars:[0,48,0,0] navigationBars:[0,0,0,48] mandatorySystemGestures:[0,48,0,64] 
+D/FlutterRenderer(23026): Width is zero. 0,0
+I/Surface (23026): Creating surface for consumer unnamed-23026-0 with slotExpansion=1 for 64 slots
+I/Surface (23026): Creating surface for consumer VRI[MainActivity]#0(BLAST Consumer)0 with slotExpansion=1 for 64 slots
+D/FlutterJNI(23026): Sending viewport metrics to the engine.
+I/Surface (23026): Creating surface for consumer unnamed-23026-1 with slotExpansion=1 for 64 slots
+I/Surface (23026): Creating surface for consumer 3c57957 SurfaceView[com.example.fitness_recommendation/com.example.fitness_recommendation.MainActivity]#1(BLAST Consumer)1 with slotExpansion=1 for 64 slots
+I/Choreographer(23026): Skipped 150 frames!  The application may be doing too much work on its main thread.
+D/FlutterJNI(23026): Sending viewport metrics to the engine.
+I/HWUI    (23026): Davey! duration=2556ms; Flags=1, FrameTimelineVsyncId=127741, IntendedVsync=2153875418412, Vsync=2156375418312, InputEventId=0, HandleInputStart=2156388979900, AnimationStart=2156389005500, PerformTraversalsStart=2156389038000, DrawStart=2156396435300, FrameDeadline=2153892085078, FrameStartTime=2156388304800, FrameInterval=16666666, WorkloadTarget=16666666, AnimationTime=2156375418312, AnimationCounter=-1, SyncQueued=2156396895000, SyncStart=2156406071500, IssueDrawCommandsStart=2156406365600, SwapBuffers=2156420357100, FrameCompleted=2156441259000, DequeueBufferDuration=11770400, QueueBufferDuration=2069200, GpuCompleted=2156429395100, SwapBuffersCompleted=2156441259000, DisplayPresentTime=0, CommandSubmissionCompleted=2156420357100, 
+D/WindowLayoutComponentImpl(23026): Register WindowLayoutInfoListener on Context=com.example.fitness_recommendation.MainActivity@1e7312d, of which baseContext=android.app.ContextImpl@8ec5e74
+D/ProfileInstaller(23026): Installing profile for com.example.fitness_recommendation
+D/FlutterJNI(23026): Sending viewport metrics to the engine.
+I/flutter (23026): 🔐 Biometric Check:
+I/flutter (23026):   canCheckBiometrics: true
+I/flutter (23026):   isDeviceSupported: true
+I/flutter (23026):   availableBiometrics: [BiometricType.weak, BiometricType.strong]
+I/flutter (23026): ✅ Biometric available - showing button
+D/InsetsController(23026): hide(ime())
+I/ImeTracker(23026): com.example.fitness_recommendation:d15a4f86: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+I/_recommendation(23026): Background concurrent mark compact GC freed 2229KB AllocSpace bytes, 3(96KB) LOS objects, 49% free, 3018KB/6037KB, paused 1.098ms,50.816ms total 109.225ms
+D/WindowOnBackDispatcher(23026): setTopOnBackInvokedCallback (unwrapped): androidx.activity.OnBackPressedDispatcher$Api34Impl$createOnBackAnimationCallback$1@62c4555
+D/WindowOnBackDispatcher(23026): setOnBackInvokedCallbackInfo: androidx.activity.OnBackPressedDispatcher$Api34Impl$createOnBackAnimationCallback$1@62c4555
+D/WindowOnBackDispatcher(23026): setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@3e03c11
+D/WindowOnBackDispatcher(23026): setOnBackInvokedCallbackInfo: android.app.Activity$$ExternalSyntheticLambda0@3e03c11
+D/WindowOnBackDispatcher(23026): setTopOnBackInvokedCallback (unwrapped): androidx.activity.OnBackPressedDispatcher$Api34Impl$createOnBackAnimationCallback$1@62c4555
+D/WindowOnBackDispatcher(23026): setOnBackInvokedCallbackInfo: androidx.activity.OnBackPressedDispatcher$Api34Impl$createOnBackAnimationCallback$1@62c4555
+D/WindowOnBackDispatcher(23026): setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@3e03c11
+D/WindowOnBackDispatcher(23026): setOnBackInvokedCallbackInfo: android.app.Activity$$ExternalSyntheticLambda0@3e03c11
+D/InsetsController(23026): hide(ime())
+I/ImeTracker(23026): com.example.fitness_recommendation:865ae2d9: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+I/flutter (23026): 📥 Full Response Body (first 500 chars):
+I/flutter (23026):          
+I/flutter (23026): {"id":"gen-1791969463-KDhPch5moNoOQlshYpG5","error":{"message":"Upstream error from Nvidia: ResourceExhausted: Worker local total request limit reached (16/16)","code":502,"metadata":{"error_type":"provider_unavailable"}}}
+I/flutter (23026): 📦 Response type: _Map<String, dynamic>
+I/flutter (23026): 📦 Response keys: [id, error]
+I/flutter (23026): 📋 Choices type: Null, length: not list
+I/flutter (23026): ❌ No choices in response. Available keys: [id, error]
+I/flutter (23026): ❌ AI suggestion failed: Exception: Response không có choices
+D/VRI[MainActivity](23026): visibilityChanged oldVisibility=true newVisibility=false
+Lost connection to device.

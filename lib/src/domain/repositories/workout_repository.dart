@@ -7,11 +7,15 @@ abstract interface class WorkoutRepository {
 
   Future<void> savePlan(WorkoutPlan plan);
 
+  Future<void> deletePlan(String planId);
+
   Future<List<PlannedExercise>> exercisesForPlan(String planId);
 
   Future<PlannedExercise?> exerciseById(String exerciseId);
 
   Future<void> saveExercise(PlannedExercise exercise);
+
+  Future<void> deleteExercise(String exerciseId);
 
   Future<void> saveLoggedSet(LoggedSet loggedSet);
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_dependencies.dart' show kLocalUserId;
 import '../../domain/models/today_workout.dart';
 import '../../domain/models/workout.dart';
 import '../../services/log_set_service.dart';
@@ -11,11 +12,12 @@ class TodayWorkoutScreen extends StatefulWidget {
     this.workout,
     this.workoutService,
     this.logSetService,
-    this.userId = 'sample-user',
+    this.userId = kLocalUserId,
     this.dayOfWeek,
     this.isLoading = false,
     this.errorMessage,
     this.idGenerator,
+    this.onSetLogged,
   });
 
   final TodayWorkout? workout;
@@ -26,6 +28,9 @@ class TodayWorkoutScreen extends StatefulWidget {
   final bool isLoading;
   final String? errorMessage;
   final String Function()? idGenerator;
+
+  /// Gọi sau mỗi lần lưu set thành công (để shell biết cần làm mới dữ liệu).
+  final VoidCallback? onSetLogged;
 
   @override
   State<TodayWorkoutScreen> createState() => _TodayWorkoutScreenState();
@@ -38,6 +43,10 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
   late bool _loading;
   String? _loadError;
   bool _saving = false;
+
+  /// Trọng lượng của set gần nhất ở các buổi trước (để gợi ý mức tạ ban đầu).
+  Map<String, double> _lastKnownWeight = {};
+
   final _weightController = TextEditingController();
   final _repsController = TextEditingController();
   final _feedbackController = TextEditingController();
@@ -50,10 +59,11 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     if (widget.workout != null) {
       _setWorkout(widget.workout!);
     } else if (widget.workoutService != null) {
+      _loading = true;
       _loadWorkout();
-    } else {
-      _setWorkout(sampleTodayWorkout());
     }
+    // Không có workout lẫn service → giữ _workout = null để màn hình
+    // hiển thị trạng thái "Không có kế hoạch tập luyện".
   }
 
   @override
@@ -68,16 +78,16 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const _StateScaffold(
-        title: "Today's workout",
+        title: 'Tập luyện hôm nay',
         child: Center(child: CircularProgressIndicator()),
       );
     }
     if (_loadError != null) {
       return _StateScaffold(
-        title: "Today's workout",
+        title: 'Tập luyện hôm nay',
         child: _MessageState(
           icon: Icons.cloud_off_outlined,
-          title: 'Unable to load workout',
+          title: 'Không thể tải tập luyện',
           message: _loadError!,
         ),
       );
@@ -85,23 +95,27 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     final workout = _workout;
     if (workout == null || workout.exercises.isEmpty) {
       return const _StateScaffold(
-        title: "Today's workout",
+        title: 'Tập luyện hôm nay',
         child: _MessageState(
           icon: Icons.fitness_center,
-          title: 'No workout planned',
-          message: 'Your next workout will appear here when it is ready.',
+          title: 'Không có kế hoạch tập luyện',
+          message: 'Hôm nay chưa có giáo án. Hãy tạo giáo án ở tab Giáo án rồi quay lại.',
         ),
       );
     }
 
-    final progress = _completedSets / _activeExercise.targetSets;
+    final progress = _activeExercise.targetSets == 0
+        ? 0.0
+        : _completedSets / _activeExercise.targetSets;
+    final activeDone = _completedSets >= _activeExercise.targetSets;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Today's workout"),
+        title: const Text('Tập luyện hôm nay'),
         actions: [
           IconButton(
-            tooltip: 'Workout history',
-            onPressed: () {},
+            tooltip: 'Lịch sử tập luyện',
+            onPressed: _showHistory,
             icon: const Icon(Icons.history),
             constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           ),
@@ -128,10 +142,9 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${workout.exercises.length} exercises · ${workout.muscleGroups.join(' · ')}',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: const Color(0xFF475569),
-                  ),
+                  '${workout.exercises.length} bài · ${workout.muscleGroups.join(' · ')}',
+                  style: Theme.of(context).textTheme.bodyLarge
+                      ?.copyWith(color: const Color(0xFF475569)),
                 ),
                 const SizedBox(height: 24),
                 _ProgressCard(
@@ -140,21 +153,60 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
                   progress: progress.clamp(0.0, 1.0),
                 ),
                 const SizedBox(height: 20),
-                Text(
-                  'Next up',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Tiếp theo',
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    if (_currentExerciseIndex >= 0)
+                      Text(
+                        'Bài ${_currentExerciseIndex + 1} / ${_orderedExercises.length}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF64748B),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 _ExerciseCard(exercise: _activeExercise),
-                const SizedBox(height: 20),
-                _SetForm(
-                  weightController: _weightController,
-                  repsController: _repsController,
-                  feedbackController: _feedbackController,
-                  onSave: _saving ? null : _saveSet,
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _hasPreviousExercise
+                            ? _handlePreviousTap
+                            : null,
+                        icon: const Icon(Icons.skip_previous),
+                        label: const Text('Bài trước'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: _hasNextExercise ? _handleNextTap : null,
+                        icon: const Icon(Icons.skip_next),
+                        label: const Text('Bài kế tiếp'),
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 20),
+                if (_isWorkoutCompleted)
+                  const _CompletionBanner()
+                else if (activeDone)
+                  _ExerciseDoneCard(totalSets: _activeExercise.targetSets)
+                else
+                  _SetForm(
+                    weightController: _weightController,
+                    repsController: _repsController,
+                    feedbackController: _feedbackController,
+                    onSave: _saving ? null : _saveSet,
+                  ),
               ],
             );
           },
@@ -165,51 +217,262 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
 
   Future<void> _loadWorkout() async {
     try {
-      final workout = await widget.workoutService!.loadTodayWorkout(
+      final loaded = await widget.workoutService!.loadTodayWorkout(
         userId: widget.userId,
         dayOfWeek: widget.dayOfWeek ?? DateTime.now().weekday,
       );
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _setWorkout(workout);
+        _loadError = null;
+        _setWorkout(loaded == null ? null : _onlyToday(loaded));
       });
     } catch (error) {
+      debugPrint('Load today workout failed: $error');
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _loadError = error.toString();
+        _loadError = 'Không tải được buổi tập. Vui lòng thử lại.';
       });
     }
+  }
+
+  /// Chỉ giữ các set của hôm nay. Nếu không lọc, bài đã tập đủ set ở tuần
+  /// trước sẽ bị coi là "đã xong" và không tập lại được.
+  /// Trọng lượng gần nhất của các buổi trước vẫn được giữ để gợi ý mức tạ.
+  TodayWorkout _onlyToday(TodayWorkout source) {
+    final now = DateTime.now();
+    bool isToday(LoggedSet s) =>
+        s.loggedAt.year == now.year &&
+        s.loggedAt.month == now.month &&
+        s.loggedAt.day == now.day;
+
+    final today = <String, List<LoggedSet>>{};
+    final lastWeights = <String, double>{};
+
+    for (final exercise in source.exercises) {
+      final all =
+          source.loggedSetsByExercise[exercise.id] ?? const <LoggedSet>[];
+      if (all.isNotEmpty) {
+        final latest = all.reduce(
+          (a, b) => b.loggedAt.isAfter(a.loggedAt) ? b : a,
+        );
+        lastWeights[exercise.id] = latest.weight;
+      }
+      today[exercise.id] = all.where(isToday).toList();
+    }
+
+    _lastKnownWeight = lastWeights;
+    return TodayWorkout(
+      plan: source.plan,
+      exercises: source.exercises,
+      loggedSetsByExercise: today,
+    );
+  }
+
+  double _weightFor(TodayWorkout workout, PlannedExercise exercise) {
+    final todays =
+        workout.loggedSetsByExercise[exercise.id] ?? const <LoggedSet>[];
+    if (todays.isNotEmpty) {
+      return workout.currentWeightFor(
+        exercise: exercise,
+        loggedSetsByExercise: workout.loggedSetsByExercise,
+      );
+    }
+    return _lastKnownWeight[exercise.id] ?? exercise.initialWeight;
   }
 
   void _setWorkout(TodayWorkout? workout) {
     _workout = workout;
     if (workout == null || workout.exercises.isEmpty) return;
+    final sortedExercises = [...workout.exercises]
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     _activeExercise =
         workout.activeExercise(
           loggedSetsByExercise: workout.loggedSetsByExercise,
         ) ??
-        workout.exercises.first;
+        sortedExercises.last;
     _completedSets =
         (workout.loggedSetsByExercise[_activeExercise.id] ?? const []).length;
-    _weightController.text = workout
-        .currentWeightFor(
-          exercise: _activeExercise,
-          loggedSetsByExercise: workout.loggedSetsByExercise,
-        )
-        .toStringAsFixed(1);
+    _weightController.text = _weightFor(
+      workout,
+      _activeExercise,
+    ).toStringAsFixed(1);
     _repsController.text = _activeExercise.targetReps.toString();
+  }
+
+  /// Danh sách bài tập đã sắp theo thứ tự trong giáo án.
+  List<PlannedExercise> get _orderedExercises {
+    final workout = _workout;
+    if (workout == null) return const [];
+    return [...workout.exercises]
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+  }
+
+  /// Chỉ số của bài tập đang tập trong [_orderedExercises] (bắt đầu từ 0).
+  int get _currentExerciseIndex =>
+      _orderedExercises.indexWhere((e) => e.id == _activeExercise.id);
+
+  bool get _hasPreviousExercise => _currentExerciseIndex > 0;
+
+  bool get _hasNextExercise {
+    final index = _currentExerciseIndex;
+    return index >= 0 && index + 1 < _orderedExercises.length;
+  }
+
+  /// True khi mọi bài tập đã đủ số set (hiển thị realtime).
+  bool get _isWorkoutCompleted {
+    final workout = _workout;
+    if (workout == null || workout.exercises.isEmpty) return false;
+    for (final e in workout.exercises) {
+      final done = (workout.loggedSetsByExercise[e.id] ?? const []).length;
+      if (done < e.targetSets) return false;
+    }
+    return true;
+  }
+
+  /// Bài chưa đủ set gần nhất sau bài hiện tại (quay vòng về đầu danh sách).
+  PlannedExercise? _nextIncompleteExercise() {
+    final workout = _workout;
+    if (workout == null) return null;
+    final list = _orderedExercises;
+    final start = _currentExerciseIndex;
+    if (start < 0) return null;
+    for (var step = 1; step < list.length; step++) {
+      final exercise = list[(start + step) % list.length];
+      final done =
+          (workout.loggedSetsByExercise[exercise.id] ?? const []).length;
+      if (done < exercise.targetSets) return exercise;
+    }
+    return null;
+  }
+
+  void _handleNextTap() {
+    if (!_goToNextExercise()) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Đã chuyển sang: ${_activeExercise.exercise}'),
+        backgroundColor: const Color(0xFF16A34A),
+      ),
+    );
+  }
+
+  void _handlePreviousTap() {
+    if (!_goToPreviousExercise()) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Quay lại: ${_activeExercise.exercise}'),
+        backgroundColor: const Color(0xFF16A34A),
+      ),
+    );
+  }
+
+  bool _goToNextExercise() {
+    final index = _currentExerciseIndex;
+    final exercises = _orderedExercises;
+    if (index < 0 || index + 1 >= exercises.length) return false;
+    _switchToExercise(exercises[index + 1]);
+    return true;
+  }
+
+  bool _goToPreviousExercise() {
+    final index = _currentExerciseIndex;
+    final exercises = _orderedExercises;
+    if (index <= 0) return false;
+    _switchToExercise(exercises[index - 1]);
+    return true;
+  }
+
+  /// Chuyển bài tập đang active sang [exercise] và đồng bộ lại form.
+  void _switchToExercise(PlannedExercise exercise) {
+    final workout = _workout;
+    if (workout == null) return;
+    setState(() {
+      _activeExercise = exercise;
+      _completedSets =
+          (workout.loggedSetsByExercise[exercise.id] ?? const []).length;
+      _weightController.text = _weightFor(workout, exercise).toStringAsFixed(1);
+      _repsController.text = exercise.targetReps.toString();
+      _feedbackController.clear();
+    });
+  }
+
+  String _formatWeight(double weight) => weight == weight.roundToDouble()
+      ? weight.toInt().toString()
+      : weight.toStringAsFixed(1);
+
+  void _showHistory() {
+    final workout = _workout;
+    if (workout == null) return;
+
+    final entries = <Widget>[];
+    for (final exercise in _orderedExercises) {
+      final sets = [
+        ...(workout.loggedSetsByExercise[exercise.id] ?? const <LoggedSet>[]),
+      ]..sort((a, b) => a.setIndex.compareTo(b.setIndex));
+      if (sets.isEmpty) continue;
+      entries.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 4),
+          child: Text(
+            exercise.exercise,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          ),
+        ),
+      );
+      for (final set in sets) {
+        final feedback = (set.feedbackText ?? '').isEmpty
+            ? ''
+            : ' · "${set.feedbackText}"';
+        entries.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Text(
+              'Set ${set.setIndex}: ${_formatWeight(set.weight)} kg × ${set.reps}$feedback',
+            ),
+          ),
+        );
+      }
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(20),
+          children: [
+            const Text(
+              'Lịch sử buổi tập hôm nay',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            if (entries.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 16),
+                child: Text('Chưa có set nào được ghi hôm nay.'),
+              )
+            else
+              ...entries,
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _saveSet() async {
     final workout = _workout;
     if (workout == null) return;
-    final weight = double.tryParse(_weightController.text);
+    if (_completedSets >= _activeExercise.targetSets) return;
+
+    final weight = double.tryParse(_weightController.text.replaceAll(',', '.'));
     final reps = int.tryParse(_repsController.text);
     if (weight == null || reps == null || weight < 0 || reps <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid weight and rep count.')),
+        const SnackBar(content: Text('Nhập trọng lượng và số lần hợp lệ.')),
       );
       return;
     }
@@ -236,14 +499,25 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
         loggedSet: loggedSet,
       );
     } catch (error) {
+      debugPrint('Save set failed: $error');
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Unable to save set: $error')),
+        const SnackBar(content: Text('Không thể lưu set. Vui lòng thử lại.')),
       );
       return;
     }
-    workout.loggedSetsByExercise[_activeExercise.id]!.add(loggedSet);
+
+    // Tạo list mới thay vì .add() để không lỗi khi list gốc là const.
+    final exerciseId = _activeExercise.id;
+    workout.loggedSetsByExercise[exerciseId] = [
+      ...(workout.loggedSetsByExercise[exerciseId] ?? const <LoggedSet>[]),
+      loggedSet,
+    ];
+    widget.onSetLogged?.call();
+
+    final finishedName = _activeExercise.exercise;
+    final finishedExercise = _completedSets + 1 >= _activeExercise.targetSets;
     setState(() {
       _saving = false;
       _completedSets = (_completedSets + 1).clamp(
@@ -252,13 +526,89 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
       );
     });
     FocusScope.of(context).unfocus();
+
+    if (!finishedExercise) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã lưu set $_completedSets'),
+          backgroundColor: const Color(0xFF16A34A),
+        ),
+      );
+      return;
+    }
+
+    // Đủ set của bài hiện tại → chuyển sang bài chưa xong kế tiếp (nếu có).
+    final next = _nextIncompleteExercise();
+    if (next != null) {
+      _switchToExercise(next);
+    }
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Set $_completedSets saved'),
+        content: Text(
+          next != null
+              ? 'Hoàn thành $finishedName — chuyển sang ${next.exercise}'
+              : 'Hoàn thành $finishedName — đã xong tất cả bài tập!',
+        ),
         backgroundColor: const Color(0xFF16A34A),
       ),
     );
   }
+}
+
+class _CompletionBanner extends StatelessWidget {
+  const _CompletionBanner();
+
+  @override
+  Widget build(BuildContext context) => Card(
+    color: const Color(0xFFDCFCE7),
+    child: const Padding(
+      padding: EdgeInsets.all(20),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 32),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hoàn thành tất cả!',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                SizedBox(height: 4),
+                Text('Bạn đã xong tất cả bài tập hôm nay.'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _ExerciseDoneCard extends StatelessWidget {
+  const _ExerciseDoneCard({required this.totalSets});
+
+  final int totalSets;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle_outline, color: Color(0xFF16A34A)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Bài này đã đủ $totalSets set. Chuyển sang bài khác để tiếp tục.',
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _StateScaffold extends StatelessWidget {
@@ -322,12 +672,11 @@ class _ProgressCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Session progress',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                'Tiến độ bài tập',
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
-              Text('$completedSets of $totalSets sets'),
+              Text('$completedSets / $totalSets set'),
             ],
           ),
           const SizedBox(height: 14),
@@ -364,7 +713,7 @@ class _ExerciseCard extends StatelessWidget {
         style: const TextStyle(fontWeight: FontWeight.w700),
       ),
       subtitle: Text(
-        '${exercise.muscleGroup} · ${exercise.targetSets} sets × ${exercise.targetReps} reps',
+        '${exercise.muscleGroup} · ${exercise.targetSets} set × ${exercise.targetReps} lần',
       ),
     ),
   );
@@ -390,10 +739,9 @@ class _SetForm extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Log your set',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            'Ghi nhận set',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 16),
           Row(
@@ -405,7 +753,7 @@ class _SetForm extends StatelessWidget {
                     decimal: true,
                   ),
                   decoration: const InputDecoration(
-                    labelText: 'Weight (kg)',
+                    labelText: 'Trọng lượng (kg)',
                     prefixIcon: Icon(Icons.monitor_weight_outlined),
                   ),
                 ),
@@ -416,7 +764,7 @@ class _SetForm extends StatelessWidget {
                   controller: repsController,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'Reps',
+                    labelText: 'Số lần',
                     prefixIcon: Icon(Icons.repeat),
                   ),
                 ),
@@ -429,7 +777,7 @@ class _SetForm extends StatelessWidget {
             minLines: 2,
             maxLines: 3,
             decoration: const InputDecoration(
-              labelText: 'How did it feel? (optional)',
+              labelText: 'Cảm giác thế nào? (tùy chọn)',
               alignLabelWithHint: true,
               prefixIcon: Icon(Icons.notes_outlined),
             ),
@@ -441,7 +789,7 @@ class _SetForm extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: onSave,
               icon: const Icon(Icons.check),
-              label: const Text('Save set'),
+              label: const Text('Lưu set'),
             ),
           ),
         ],

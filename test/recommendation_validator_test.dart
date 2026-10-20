@@ -1,6 +1,6 @@
+import 'package:fitness_recommendation/src/services/recommendation/recommendation_validator.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_recommendation/src/domain/models/recommendation.dart';
-import 'package:fitness_recommendation/src/services/recommendation_validator.dart';
 
 void main() {
   test('accepts decrease weight when suggested weight is lower', () {
