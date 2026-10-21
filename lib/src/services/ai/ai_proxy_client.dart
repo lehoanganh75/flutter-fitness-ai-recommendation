@@ -110,6 +110,7 @@ class AiProxyClient {
   /// 1. Thử Gemini.
   /// 2. Nếu Gemini lỗi hoặc JSON không hợp lệ, chuyển sang OpenRouter.
   /// 3. Nếu cả hai lỗi, trả về thông báo tổng hợp.
+
   Future<Map<String, dynamic>> analyze({
     required String task,
     required Map<String, dynamic> input,
@@ -126,23 +127,18 @@ class AiProxyClient {
       );
     }
 
-    print('\n========== AI REQUEST ==========');
-    print('AI task: $task');
-    print('Gemini model: $model');
-    print('OpenRouter model: $openRouterModel');
-    print('AI input keys: ${input.keys.toList()}');
-    print('================================');
-
     final failures = <String>[];
 
-    // Ưu tiên Gemini nếu đã cấu hình API key.
+    // 1. Thử Gemini trước nếu có API key.
     if (apiKey.trim().isNotEmpty) {
       try {
+        final uri = Uri.parse(
+          'https://generativelanguage.googleapis.com/'
+          'v1beta/models/$model:generateContent',
+        );
+
         final response = await _postWithRetry(
-          uri: Uri.parse(
-            'https://generativelanguage.googleapis.com/v1beta/models/'
-            '$model:generateContent',
-          ),
+          uri: uri,
           headers: {
             'Content-Type': 'application/json',
             'x-goog-api-key': apiKey.trim(),
@@ -152,7 +148,8 @@ class AiProxyClient {
 
         if (response.statusCode != 200) {
           throw AiProxyException(
-            'HTTP ${response.statusCode}: ${_errorDetail(response)}',
+            'Gemini HTTP ${response.statusCode}: '
+            '${_errorDetail(response)}',
           );
         }
 
@@ -163,18 +160,16 @@ class AiProxyClient {
         }
 
         final result = _decodeJsonObject(text);
-        _validateResult(task, result);
-
+        _validateResult(task, result, input: input);
         print('AI provider thành công: Gemini');
         return result;
-      } on Exception catch (e, stackTrace) {
+      } on Exception catch (e) {
         failures.add('Gemini: $e');
-        print('Gemini thất bại: $e');
-        print('Gemini stackTrace: $stackTrace');
+        print('Gemini thất bại, thử fallback nếu có: $e');
       }
     }
 
-    // Fallback cho timeout, lỗi HTTP, lỗi mạng hoặc JSON sai.
+    // 2. Gemini lỗi hoặc không được cấu hình thì thử OpenRouter.
     if (openRouterApiKey.trim().isNotEmpty) {
       try {
         final response = await _postOpenRouter(
@@ -182,11 +177,6 @@ class AiProxyClient {
           system: system,
           input: input,
         );
-        if (response.statusCode != 200) {
-          throw AiProxyException(
-            'HTTP ${response.statusCode}: ${_errorDetail(response)}',
-          );
-        }
 
         final text = _extractOpenRouterText(response);
 
@@ -195,10 +185,9 @@ class AiProxyClient {
         }
 
         final result = _decodeJsonObject(text);
+        _validateResult(task, result, input: input);
 
         print('AI provider thành công: OpenRouter');
-        print('AI JSON result: ${jsonEncode(result)}');
-
         return result;
       } on Exception catch (e) {
         failures.add('OpenRouter: $e');
@@ -553,7 +542,11 @@ ${switch (task) {
     );
   }
 
-  void _validateResult(String task, Map<String, dynamic> result) {
+  void _validateResult(
+    String task,
+    Map<String, dynamic> result, {
+    required Map<String, dynamic> input,
+  }) {
     switch (task) {
       case 'daily_suggestion':
         final summary = result['summary'];
@@ -568,6 +561,8 @@ ${switch (task) {
           );
         }
 
+        final names = <String>{};
+
         for (final exercise in exercises) {
           if (exercise is! Map ||
               exercise['name'] is! String ||
@@ -576,6 +571,14 @@ ${switch (task) {
               (exercise['reason'] as String).trim().isEmpty) {
             throw const AiProxyException(
               'Mỗi exercise phải có name và reason hợp lệ',
+            );
+          }
+
+          final name = (exercise['name'] as String).trim();
+
+          if (!names.add(name.toLowerCase())) {
+            throw const AiProxyException(
+              'daily_suggestion không được có bài tập trùng tên',
             );
           }
         }
@@ -588,6 +591,7 @@ ${switch (task) {
           'keep_weight',
           'rest',
         };
+
         const reasons = {
           'user_reported_fatigue',
           'progression',
@@ -595,15 +599,74 @@ ${switch (task) {
           'no_data',
         };
 
-        if (!actions.contains(result['action']) ||
-            !reasons.contains(result['reason']) ||
-            result['suggested_weight'] is! num ||
-            result['confidence'] is! num ||
-            (result['confidence'] as num) < 0 ||
-            (result['confidence'] as num) > 1) {
+        final action = result['action'];
+        final reason = result['reason'];
+        final suggested = result['suggested_weight'];
+        final confidence = result['confidence'];
+
+        if (!actions.contains(action) ||
+            !reasons.contains(reason) ||
+            suggested is! num ||
+            !suggested.toDouble().isFinite ||
+            suggested < 0 ||
+            confidence is! num ||
+            !confidence.toDouble().isFinite ||
+            confidence < 0 ||
+            confidence > 1) {
           throw const AiProxyException(
             'Kết quả recommendation không đúng schema',
           );
+        }
+
+        // Chấp nhận cả snake_case và camelCase.
+        final current = input['current_weight'] ?? input['currentWeight'];
+
+        if (current is! num || !current.toDouble().isFinite || current < 0) {
+          throw const AiProxyException(
+            'Input recommendation thiếu current_weight hợp lệ',
+          );
+        }
+
+        final currentWeight = current.toDouble();
+        final suggestedWeight = suggested.toDouble();
+
+        // Giới hạn thay đổi tối đa 20% khi đang sử dụng mức tạ > 0.
+        if (currentWeight > 0) {
+          final changePercent =
+              (suggestedWeight - currentWeight).abs() / currentWeight;
+
+          if (changePercent > 0.20) {
+            throw const AiProxyException(
+              'Suggested weight không được thay đổi quá 20%',
+            );
+          }
+        }
+
+        switch (action) {
+          case 'decrease_weight':
+            if (suggestedWeight >= currentWeight) {
+              throw const AiProxyException(
+                'decrease_weight phải thấp hơn current_weight',
+              );
+            }
+            break;
+
+          case 'increase_weight':
+            if (suggestedWeight <= currentWeight) {
+              throw const AiProxyException(
+                'increase_weight phải cao hơn current_weight',
+              );
+            }
+            break;
+
+          case 'keep_weight':
+          case 'rest':
+            if (suggestedWeight != currentWeight) {
+              throw const AiProxyException(
+                'keep_weight/rest phải giữ nguyên current_weight',
+              );
+            }
+            break;
         }
         break;
 

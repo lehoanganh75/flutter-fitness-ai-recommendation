@@ -1,3 +1,4 @@
+import 'package:fitness_recommendation/src/services/weight_advice_service.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_dependencies.dart' show kLocalUserId;
@@ -20,6 +21,7 @@ class AppShell extends StatefulWidget {
     this.workoutRepository,
     this.statsService,
     this.dailySuggestionService,
+    this.weightAdviceService,
     this.userId = kLocalUserId,
     this.showTodayWorkoutInitially = false,
   });
@@ -29,6 +31,7 @@ class AppShell extends StatefulWidget {
   final WorkoutRepository? workoutRepository;
   final StatsService? statsService;
   final DailySuggestionService? dailySuggestionService;
+  final WeightAdviceService? weightAdviceService;
   final String userId;
   final bool showTodayWorkoutInitially;
 
@@ -123,6 +126,7 @@ class _AppShellState extends State<AppShell> {
               key: ValueKey('workout-$_workoutKey'),
               workoutService: widget.workoutService,
               logSetService: widget.logSetService,
+              weightAdviceService: widget.weightAdviceService,
               userId: widget.userId,
               onSetLogged: () => _hasNewLoggedSets = true,
             ),

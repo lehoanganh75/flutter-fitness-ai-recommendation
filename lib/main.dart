@@ -46,6 +46,7 @@ class FitnessRecommendationApp extends StatelessWidget {
         workoutRepository: dependencies.workoutRepository,
         statsService: dependencies.statsService,
         dailySuggestionService: dependencies.dailySuggestionService,
+        weightAdviceService: dependencies.weightAdviceService, // ← THÊM
         userId: kLocalUserId,
       ),
     );

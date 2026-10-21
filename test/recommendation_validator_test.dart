@@ -1,6 +1,6 @@
-import 'package:fitness_recommendation/src/services/recommendation/recommendation_validator.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_recommendation/src/domain/models/recommendation.dart';
+import 'package:fitness_recommendation/src/services/recommendation/recommendation_validator.dart';
 
 void main() {
   test('accepts decrease weight when suggested weight is lower', () {
@@ -36,6 +36,7 @@ void main() {
       throwsA(isA<FormatException>()),
     );
   });
+
   test('accepts increase weight when suggested weight is higher', () {
     final recommendation = Recommendation(
       action: RecommendationAction.INCREASE_WEIGHT,
@@ -120,10 +121,11 @@ void main() {
       returnsNormally,
     );
   });
-  test('rejects non-positive current weight', () {
+
+  test('accepts zero weight for bodyweight exercises', () {
     final recommendation = Recommendation(
       action: RecommendationAction.KEEP_WEIGHT,
-      exercise: 'Bench Press',
+      exercise: 'Push-up',
       currentWeight: 0,
       suggestedWeight: 0,
       targetReps: 10,
@@ -133,7 +135,7 @@ void main() {
 
     expect(
       () => RecommendationValidator.validate(recommendation),
-      throwsA(isA<FormatException>()),
+      returnsNormally,
     );
   });
 

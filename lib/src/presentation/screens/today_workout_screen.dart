@@ -1,6 +1,8 @@
+import 'package:fitness_recommendation/src/services/weight_advice_service.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_dependencies.dart' show kLocalUserId;
+import '../../domain/models/recommendation.dart';
 import '../../domain/models/today_workout.dart';
 import '../../domain/models/workout.dart';
 import '../../services/log_set_service.dart';
@@ -12,6 +14,7 @@ class TodayWorkoutScreen extends StatefulWidget {
     this.workout,
     this.workoutService,
     this.logSetService,
+    this.weightAdviceService,
     this.userId = kLocalUserId,
     this.dayOfWeek,
     this.isLoading = false,
@@ -23,6 +26,7 @@ class TodayWorkoutScreen extends StatefulWidget {
   final TodayWorkout? workout;
   final WorkoutService? workoutService;
   final LogSetService? logSetService;
+  final WeightAdviceService? weightAdviceService;
   final String userId;
   final int? dayOfWeek;
   final bool isLoading;
@@ -46,6 +50,10 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
 
   /// Trọng lượng của set gần nhất ở các buổi trước (để gợi ý mức tạ ban đầu).
   Map<String, double> _lastKnownWeight = {};
+
+  /// AI gợi ý cân nặng cho set tiếp theo (sau khi lưu set hiện tại).
+  Recommendation? _advice;
+  bool _adviceLoading = false;
 
   final _weightController = TextEditingController();
   final _repsController = TextEditingController();
@@ -153,6 +161,15 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
                   progress: progress.clamp(0.0, 1.0),
                 ),
                 const SizedBox(height: 20),
+                // 🆕 Recommendation Card (hiện nếu có advice)
+                if (_advice != null)
+                  _RecommendationCard(
+                    recommendation: _advice!,
+                    isLoading: _adviceLoading,
+                    onApply: _applyAdvice,
+                    onDismiss: _dismissAdvice,
+                  ),
+                if (_advice != null) const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -394,6 +411,8 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
       _weightController.text = _weightFor(workout, exercise).toStringAsFixed(1);
       _repsController.text = exercise.targetReps.toString();
       _feedbackController.clear();
+      _advice = null; // 🆕 Xoá card gợi ý khi chuyển bài
+      _adviceLoading = false;
     });
   }
 
@@ -527,6 +546,12 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     });
     FocusScope.of(context).unfocus();
 
+    // 🆕 Nếu có feedback và chưa đủ targetSets → gọi AI để lấy gợi ý
+    final feedback = _feedbackController.text.trim();
+    if (feedback.isNotEmpty && !finishedExercise) {
+      _requestWeightAdvice(weight, feedback);
+    }
+
     if (!finishedExercise) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -553,6 +578,53 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
         backgroundColor: const Color(0xFF16A34A),
       ),
     );
+  }
+
+  /// 🆕 Gọi AI để lấy gợi ý cân nặng cho set tiếp theo.
+  Future<void> _requestWeightAdvice(
+    double currentWeight,
+    String feedback,
+  ) async {
+    final service = widget.weightAdviceService;
+    if (service == null) return; // Feature tắt
+
+    setState(() {
+      _adviceLoading = true;
+      _advice = null;
+    });
+
+    final recommendation = await service.recommendFor(
+      userId: widget.userId,
+      exerciseId: _activeExercise.id,
+      exercise: _activeExercise.exercise,
+      muscleGroup: _activeExercise.muscleGroup,
+      currentWeight: currentWeight,
+      targetReps: _activeExercise.targetReps,
+      feedback: feedback,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _adviceLoading = false;
+      _advice = recommendation;
+    });
+  }
+
+  void _applyAdvice() {
+    final advice = _advice;
+    if (advice == null) return;
+
+    setState(() {
+      _weightController.text = advice.suggestedWeight.toStringAsFixed(1);
+      _advice = null;
+    });
+  }
+
+  /// 🆕 Bỏ qua gợi ý: ẩn card
+  void _dismissAdvice() {
+    setState(() {
+      _advice = null;
+    });
   }
 }
 
@@ -609,6 +681,145 @@ class _ExerciseDoneCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Widget hiển thị gợi ý từ AI.
+class _RecommendationCard extends StatelessWidget {
+  const _RecommendationCard({
+    required this.recommendation,
+    required this.isLoading,
+    required this.onApply,
+    required this.onDismiss,
+  });
+
+  final Recommendation recommendation;
+  final bool isLoading;
+  final VoidCallback onApply;
+  final VoidCallback onDismiss;
+
+  String _reasonLabel(RecommendationReason reason) {
+    return switch (reason) {
+      RecommendationReason.USER_REPORTED_FATIGUE =>
+        'Dựa trên phản hồi về mức độ mệt mỏi của bạn.',
+      RecommendationReason.PROGRESSION =>
+        'Gợi ý tăng hoặc giảm tạ dựa trên tiến độ tập luyện.',
+      RecommendationReason.USER_PREFERENCE =>
+        'Gợi ý dựa trên sở thích tập luyện của bạn.',
+      RecommendationReason.NO_DATA =>
+        'Chưa có đủ dữ liệu lịch sử để đưa ra gợi ý chính xác.',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final action = recommendation.action;
+    final icon = _actionIcon(action);
+    final color = _actionColor(action);
+
+    return Card(
+      color: color.withValues(alpha: 0.1),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: color, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _actionLabel(action),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Cân nặng: ${recommendation.suggestedWeight.toStringAsFixed(1)} kg',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '${(recommendation.confidence * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _reasonLabel(recommendation.reason),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: const Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonal(
+                    onPressed: isLoading ? null : onApply,
+                    child: const Text('Áp dụng cân nặng'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: isLoading ? null : onDismiss,
+                    child: const Text('Bỏ qua'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _actionIcon(RecommendationAction action) {
+    return switch (action) {
+      RecommendationAction.INCREASE_WEIGHT => Icons.arrow_upward,
+      RecommendationAction.DECREASE_WEIGHT => Icons.arrow_downward,
+      RecommendationAction.REST => Icons.pause,
+      RecommendationAction.KEEP_WEIGHT => Icons.check,
+    };
+  }
+
+  Color _actionColor(RecommendationAction action) {
+    return switch (action) {
+      RecommendationAction.INCREASE_WEIGHT => const Color(0xFF16A34A),
+      RecommendationAction.DECREASE_WEIGHT => const Color(0xFFDC2626),
+      RecommendationAction.REST => const Color(0xFF2563EB),
+      RecommendationAction.KEEP_WEIGHT => const Color(0xFF8B5CF6),
+    };
+  }
+
+  String _actionLabel(RecommendationAction action) {
+    return switch (action) {
+      RecommendationAction.INCREASE_WEIGHT => 'Nâng cân nặng',
+      RecommendationAction.DECREASE_WEIGHT => 'Hạ cân nặng',
+      RecommendationAction.REST => 'Nghỉ ngơi',
+      RecommendationAction.KEEP_WEIGHT => 'Giữ nguyên',
+    };
+  }
 }
 
 class _StateScaffold extends StatelessWidget {
