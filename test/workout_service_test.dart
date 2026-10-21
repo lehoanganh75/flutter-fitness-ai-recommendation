@@ -32,6 +32,12 @@ class FakeWorkoutRepository implements WorkoutRepository {
   }
 
   @override
+  Future<void> deletePlan(String planId) async {
+    plans.removeWhere((item) => item.id == planId);
+    exercises.removeWhere((item) => item.planId == planId);
+  }
+
+  @override
   Future<List<PlannedExercise>> exercisesForPlan(String planId) async {
     return exercises.where((exercise) => exercise.planId == planId).toList();
   }
@@ -50,6 +56,12 @@ class FakeWorkoutRepository implements WorkoutRepository {
   @override
   Future<void> saveExercise(PlannedExercise exercise) async {
     exercises.add(exercise);
+  }
+
+  @override
+  Future<void> deleteExercise(String exerciseId) async {
+    exercises.removeWhere((item) => item.id == exerciseId);
+    loggedSets.removeWhere((item) => item.exerciseId == exerciseId);
   }
 
   @override

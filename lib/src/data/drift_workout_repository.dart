@@ -104,6 +104,43 @@ class DriftWorkoutRepository implements WorkoutRepository {
   }
 
   @override
+  Future<void> deletePlan(String planId) async {
+    await database.transaction(() async {
+      // Xóa các set đã log thuộc các bài tập của plan
+      final exercises = await (database.select(database.plannedExercises)
+            ..where((table) => table.planId.equals(planId)))
+          .get();
+      for (final exercise in exercises) {
+        await (database.delete(database.loggedSets)
+              ..where((table) => table.exerciseId.equals(exercise.id)))
+            .go();
+      }
+      // Xóa các bài tập của plan
+      await (database.delete(database.plannedExercises)
+            ..where((table) => table.planId.equals(planId)))
+          .go();
+      // Xóa plan
+      await (database.delete(database.workoutPlans)
+            ..where((table) => table.id.equals(planId)))
+          .go();
+    });
+  }
+
+  @override
+  Future<void> deleteExercise(String exerciseId) async {
+    await database.transaction(() async {
+      // Xóa các set đã log của bài tập
+      await (database.delete(database.loggedSets)
+            ..where((table) => table.exerciseId.equals(exerciseId)))
+          .go();
+      // Xóa bài tập
+      await (database.delete(database.plannedExercises)
+            ..where((table) => table.id.equals(exerciseId)))
+          .go();
+    });
+  }
+
+  @override
   Future<void> saveLoggedSet(domain.LoggedSet loggedSet) async {
     await database
         .into(database.loggedSets)

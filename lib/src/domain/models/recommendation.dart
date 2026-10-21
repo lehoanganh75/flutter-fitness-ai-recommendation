@@ -29,6 +29,10 @@ class Recommendation {
     required this.confidence,
   });
 
+  /// Bài tập bằng trọng lượng cơ thể (initialWeight = 0) chỉ được
+  /// gợi ý thêm tạ tối đa bằng mức này (kg).
+  static const double maxBodyweightAddedKg = 10;
+
   final RecommendationAction action;
   final String exercise;
   final double currentWeight;
@@ -70,6 +74,7 @@ class Recommendation {
     'suggested_weight': suggestedWeight,
     'target_reps': targetReps,
     'reason': _reasonToJson(),
+    'confidence': confidence,
   };
 
   factory Recommendation.fromJson(Map<String, dynamic> json) => Recommendation(
@@ -94,8 +99,9 @@ class Recommendation {
 
     final weight = value.toDouble();
 
-    if (weight <= 0) {
-      throw const FormatException('Current weight must be greater than zero');
+    // 0 = bài tập bằng trọng lượng cơ thể.
+    if (weight < 0) {
+      throw const FormatException('Current weight must not be negative');
     }
 
     return weight;
@@ -164,8 +170,18 @@ class Recommendation {
     final currentWeight = currentValue.toDouble();
     final suggestedWeight = suggestedValue.toDouble();
 
-    if (currentWeight <= 0 || suggestedWeight < 0) {
+    if (currentWeight < 0 || suggestedWeight < 0) {
       throw const FormatException('Weight must be valid');
+    }
+
+    // Bài bodyweight: không tính % được, chỉ cho thêm tạ nhẹ.
+    if (currentWeight == 0) {
+      if (suggestedWeight > maxBodyweightAddedKg) {
+        throw const FormatException(
+          'Bodyweight exercise cannot jump above 10 kg',
+        );
+      }
+      return suggestedWeight;
     }
 
     final changePercent =

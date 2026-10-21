@@ -1,154 +1,230 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fitness_recommendation/src/domain/models/memory.dart';
+import 'package:fitness_recommendation/src/domain/models/today_workout.dart';
 import 'package:fitness_recommendation/src/domain/models/workout.dart';
-import 'package:fitness_recommendation/src/domain/repositories/memory_repository.dart';
-import 'package:fitness_recommendation/src/domain/repositories/workout_repository.dart';
 import 'package:fitness_recommendation/src/presentation/screens/today_workout_screen.dart';
-import 'package:fitness_recommendation/src/services/log_set_service.dart';
-import 'package:fitness_recommendation/src/services/workout_service.dart';
+
+TodayWorkout _workout() {
+  final plan = WorkoutPlan(
+    id: 'p',
+    userId: 'u',
+    title: 'Tăng cường thân trên',
+    dayOfWeek: DateTime.monday,
+    createdAt: DateTime(2026),
+  );
+
+  final bench = PlannedExercise(
+    id: 'b',
+    planId: 'p',
+    exercise: 'Bench press',
+    muscleGroup: 'Ngực',
+    sortOrder: 1,
+    targetSets: 4,
+    targetReps: 8,
+    initialWeight: 40,
+  );
+
+  final row = PlannedExercise(
+    id: 'r',
+    planId: 'p',
+    exercise: 'Seated cable row',
+    muscleGroup: 'Lưng',
+    sortOrder: 2,
+    targetSets: 3,
+    targetReps: 10,
+    initialWeight: 35,
+  );
+
+  return TodayWorkout(
+    plan: plan,
+    exercises: [bench, row],
+    loggedSetsByExercise: {bench.id: [], row.id: []},
+  );
+}
+
+/// Buổi tập mà Bench press đã hoàn thành 3/4 set.
+TodayWorkout _almostDoneWorkout() {
+  final plan = WorkoutPlan(
+    id: 'p',
+    userId: 'u',
+    title: 'Gần hoàn thành',
+    dayOfWeek: DateTime.monday,
+    createdAt: DateTime(2026),
+  );
+
+  final bench = PlannedExercise(
+    id: 'b',
+    planId: 'p',
+    exercise: 'Bench press',
+    muscleGroup: 'Ngực',
+    sortOrder: 1,
+    targetSets: 4,
+    targetReps: 8,
+    initialWeight: 40,
+  );
+
+  final row = PlannedExercise(
+    id: 'r',
+    planId: 'p',
+    exercise: 'Seated cable row',
+    muscleGroup: 'Lưng',
+    sortOrder: 2,
+    targetSets: 3,
+    targetReps: 10,
+    initialWeight: 35,
+  );
+
+  return TodayWorkout(
+    plan: plan,
+    exercises: [bench, row],
+    loggedSetsByExercise: {
+      bench.id: [
+        LoggedSet(
+          id: 's1',
+          exerciseId: 'b',
+          setIndex: 1,
+          weight: 40,
+          reps: 8,
+          loggedAt: DateTime(2026),
+        ),
+        LoggedSet(
+          id: 's2',
+          exerciseId: 'b',
+          setIndex: 2,
+          weight: 40,
+          reps: 8,
+          loggedAt: DateTime(2026),
+        ),
+        LoggedSet(
+          id: 's3',
+          exerciseId: 'b',
+          setIndex: 3,
+          weight: 42.5,
+          reps: 8,
+          loggedAt: DateTime(2026),
+        ),
+      ],
+      row.id: [],
+    },
+  );
+}
+
+void _setLargeViewport(WidgetTester tester) {
+  tester.view.physicalSize = const Size(800, 1400);
+  tester.view.devicePixelRatio = 1;
+}
 
 void main() {
-  Widget buildSubject() => const MaterialApp(home: TodayWorkoutScreen());
+  testWidgets('shows empty state when no workout', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: TodayWorkoutScreen()));
 
-  testWidgets('shows workout title, active exercise, and progress', (
-    tester,
-  ) async {
-    await tester.pumpWidget(buildSubject());
+    expect(find.text('Tập luyện hôm nay'), findsOneWidget);
+    expect(find.text('Không có kế hoạch tập luyện'), findsOneWidget);
+    expect(
+      find.text(
+        'Hôm nay chưa có giáo án. Hãy tạo giáo án ở tab Giáo án rồi quay lại.',
+      ),
+      findsOneWidget,
+    );
+  });
 
-    expect(find.text("Today's workout"), findsOneWidget);
-    expect(find.text('Upper body strength'), findsOneWidget);
+  testWidgets('shows workout and progress', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: TodayWorkoutScreen(workout: _workout())),
+    );
+
+    expect(find.text('Tăng cường thân trên'), findsOneWidget);
+    expect(find.text('Tiến độ bài tập'), findsOneWidget);
+    expect(find.text('0 / 4 set'), findsOneWidget);
     expect(find.text('Bench press'), findsOneWidget);
-    expect(find.text('1 of 4 sets'), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.text('Ngực · 4 set × 8 lần'), findsOneWidget);
+    expect(find.text('Lưu set'), findsOneWidget);
   });
 
-  testWidgets('shows weight, reps, feedback fields and saves a set', (
-    tester,
-  ) async {
-    await tester.pumpWidget(buildSubject());
-
-    expect(find.text('Weight (kg)'), findsOneWidget);
-    expect(find.text('Reps'), findsOneWidget);
-    expect(find.text('How did it feel? (optional)'), findsOneWidget);
-
-    final saveButton = find.byType(FilledButton);
-    await tester.drag(find.byType(ListView), const Offset(0, -300));
-    await tester.pump();
-    await tester.tap(saveButton);
-    await tester.pump();
-
-    expect(find.text('Set 2 saved'), findsOneWidget);
-    expect(find.text('2 of 4 sets'), findsOneWidget);
-  });
-
-  testWidgets('loads an injected workout and saves through the service', (
-    tester,
-  ) async {
-    final repository = _FakeWorkoutRepository();
-    final plan = WorkoutPlan(
-      id: 'plan-1',
-      userId: 'user-1',
-      title: 'Injected plan',
-      dayOfWeek: DateTime.saturday,
-      createdAt: DateTime(2026),
-    );
-    final exercise = PlannedExercise(
-      id: 'exercise-1',
-      planId: plan.id,
-      exercise: 'Deadlift',
-      muscleGroup: 'Back',
-      sortOrder: 1,
-      targetSets: 2,
-      targetReps: 5,
-      initialWeight: 80,
-    );
-    repository.plan = plan;
-    repository.exercises = [exercise];
-    final service = LogSetService(
-      workoutRepository: repository,
-      memoryRepository: _FakeMemoryRepository(),
-    );
+  testWidgets('saves a set and updates progress', (tester) async {
+    _setLargeViewport(tester);
+    addTearDown(tester.view.reset);
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: TodayWorkoutScreen(
-          workoutService: WorkoutService(repository),
-          logSetService: service,
-          userId: 'user-1',
-          dayOfWeek: DateTime.saturday,
-          idGenerator: () => 'generated-id',
-        ),
-      ),
+      MaterialApp(home: TodayWorkoutScreen(workout: _workout())),
     );
-    await tester.pumpAndSettle();
 
-    expect(find.text('Injected plan'), findsOneWidget);
-    expect(find.text('Deadlift'), findsOneWidget);
-    expect(find.text('80.0'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).at(0), '40');
+    await tester.enterText(find.byType(TextField).at(1), '8');
 
-    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.ensureVisible(find.text('Lưu set'));
+    await tester.tap(find.text('Lưu set'));
+
+    // Chờ xử lý async và cập nhật giao diện.
     await tester.pump();
-    await tester.tap(find.byType(FilledButton));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
 
-    expect(repository.savedSet?.id, 'generated-id');
-    expect(repository.savedSet?.exerciseId, exercise.id);
-    expect(find.text('Set 1 saved'), findsOneWidget);
+    expect(find.text('Đã lưu set 1'), findsOneWidget);
+    expect(find.text('1 / 4 set'), findsOneWidget);
   });
-}
 
-class _FakeWorkoutRepository implements WorkoutRepository {
-  WorkoutPlan? plan;
-  List<PlannedExercise> exercises = [];
-  LoggedSet? savedSet;
+  testWidgets('next and previous buttons navigate between exercises', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: TodayWorkoutScreen(workout: _workout())),
+    );
 
-  @override
-  Future<List<WorkoutPlan>> plansForDay(String userId, int dayOfWeek) async =>
-      plan == null ? [] : [plan!];
+    expect(find.text('Bài 1 / 2'), findsOneWidget);
 
-  @override
-  Future<List<PlannedExercise>> exercisesForPlan(String planId) async =>
-      exercises;
+    final prevButton = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Bài trước'),
+    );
+    expect(prevButton.onPressed, isNull);
 
-  @override
-  Future<List<LoggedSet>> loggedSetsForExercise(String exerciseId) async => [];
+    await tester.tap(find.widgetWithText(FilledButton, 'Bài kế tiếp'));
+    await tester.pump();
 
-  @override
-  Future<void> saveLoggedSet(LoggedSet loggedSet) async => savedSet = loggedSet;
+    expect(find.text('Seated cable row'), findsOneWidget);
+    expect(find.text('Bài 2 / 2'), findsOneWidget);
+    expect(find.text('0 / 3 set'), findsOneWidget);
+    expect(find.text('Đã chuyển sang: Seated cable row'), findsOneWidget);
 
-  @override
-  Future<List<LoggedSet>> exerciseHistory(
-    String exerciseId, {
-    int? limit,
-  }) async => [];
+    final nextButton = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Bài kế tiếp'),
+    );
+    expect(nextButton.onPressed, isNull);
 
-  @override
-  Future<WorkoutPlan?> planById(String planId) async => plan;
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Bài trước'));
+    await tester.pump();
 
-  @override
-  Future<void> savePlan(WorkoutPlan plan) async {}
+    expect(find.text('Bench press'), findsOneWidget);
+    expect(find.text('Bài 1 / 2'), findsOneWidget);
+  });
 
-  @override
-  Future<PlannedExercise?> exerciseById(String exerciseId) async =>
-      exercises.where((exercise) => exercise.id == exerciseId).firstOrNull;
+  testWidgets('auto-advances to next exercise after finishing last set', (
+    tester,
+  ) async {
+    _setLargeViewport(tester);
+    addTearDown(tester.view.reset);
 
-  @override
-  Future<void> saveExercise(PlannedExercise exercise) async {}
-}
+    await tester.pumpWidget(
+      MaterialApp(home: TodayWorkoutScreen(workout: _almostDoneWorkout())),
+    );
 
-class _FakeMemoryRepository implements MemoryRepository {
-  @override
-  Future<void> save(Memory memory) async {}
+    expect(find.text('3 / 4 set'), findsOneWidget);
 
-  @override
-  Future<List<Memory>> activeForExercise({
-    required String userId,
-    required String exercise,
-    required DateTime now,
-  }) async => [];
+    await tester.enterText(find.byType(TextField).at(0), '42.5');
+    await tester.enterText(find.byType(TextField).at(1), '8');
 
-  @override
-  Future<bool> archive(String id) async => false;
+    await tester.ensureVisible(find.text('Lưu set'));
+    await tester.tap(find.text('Lưu set'));
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.text('Hoàn thành Bench press — chuyển sang Seated cable row'),
+      findsOneWidget,
+    );
+    expect(find.text('Seated cable row'), findsOneWidget);
+    expect(find.text('Bài 2 / 2'), findsOneWidget);
+    expect(find.text('0 / 3 set'), findsOneWidget);
+  });
 }

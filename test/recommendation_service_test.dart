@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fitness_recommendation/src/domain/models/recommendation.dart';
-import 'package:fitness_recommendation/src/services/recommendation_service.dart';
+import 'package:fitness_recommendation/src/services/recommendation/recommendation_service.dart';
 
 class FakeRecommendationProvider implements RecommendationProvider {
   FakeRecommendationProvider(this.recommendation);
@@ -67,6 +67,7 @@ void main() {
     expect(result.suggestedWeight, 40);
     expect(result.action, RecommendationAction.DECREASE_WEIGHT);
   });
+
   test('rejects invalid recommendation from provider', () async {
     final recommendation = Recommendation(
       action: RecommendationAction.DECREASE_WEIGHT,
@@ -94,6 +95,7 @@ void main() {
       throwsA(isA<FormatException>()),
     );
   });
+
   test('rejects recommendation for a different exercise', () async {
     final recommendation = Recommendation(
       action: RecommendationAction.DECREASE_WEIGHT,
@@ -121,6 +123,7 @@ void main() {
       throwsA(isA<FormatException>()),
     );
   });
+
   test('propagates provider errors without creating fallback', () async {
     final service = RecommendationService(
       provider: FailingRecommendationProvider(),
@@ -169,13 +172,13 @@ void main() {
     expect(provider.callCount, 0);
   });
 
-  test('rejects non-positive context weight before calling provider', () async {
+  test('accepts zero context weight for bodyweight exercises', () async {
     final provider = CountingRecommendationProvider(
       Recommendation(
         action: RecommendationAction.KEEP_WEIGHT,
-        exercise: 'Bench Press',
-        currentWeight: 50,
-        suggestedWeight: 50,
+        exercise: 'Push-up',
+        currentWeight: 0,
+        suggestedWeight: 0,
         targetReps: 10,
         reason: RecommendationReason.NO_DATA,
         confidence: 0.5,
@@ -184,19 +187,18 @@ void main() {
 
     final service = RecommendationService(provider: provider);
 
-    expect(
-      () => service.recommend(
-        context: RecommendationContext(
-          exercise: 'Bench Press',
-          currentWeight: 0,
-          targetReps: 10,
-          recentFeedback: const [],
-        ),
+    final result = await service.recommend(
+      context: RecommendationContext(
+        exercise: 'Push-up',
+        currentWeight: 0,
+        targetReps: 10,
+        recentFeedback: const [],
       ),
-      throwsA(isA<FormatException>()),
     );
 
-    expect(provider.callCount, 0);
+    expect(result.currentWeight, 0);
+    expect(result.suggestedWeight, 0);
+    expect(provider.callCount, 1);
   });
 
   test('rejects invalid context target reps before calling provider', () async {
