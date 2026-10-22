@@ -580,34 +580,46 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     );
   }
 
-  /// 🆕 Gọi AI để lấy gợi ý cân nặng cho set tiếp theo.
   Future<void> _requestWeightAdvice(
     double currentWeight,
     String feedback,
   ) async {
+    if (_adviceLoading) return;
+
     final service = widget.weightAdviceService;
-    if (service == null) return; // Feature tắt
+    if (service == null) return;
 
     setState(() {
       _adviceLoading = true;
       _advice = null;
     });
 
-    final recommendation = await service.recommendFor(
-      userId: widget.userId,
-      exerciseId: _activeExercise.id,
-      exercise: _activeExercise.exercise,
-      muscleGroup: _activeExercise.muscleGroup,
-      currentWeight: currentWeight,
-      targetReps: _activeExercise.targetReps,
-      feedback: feedback,
-    );
+    try {
+      final recommendation = await service.recommendFor(
+        userId: widget.userId,
+        exerciseId: _activeExercise.id,
+        exercise: _activeExercise.exercise,
+        muscleGroup: _activeExercise.muscleGroup,
+        currentWeight: currentWeight,
+        targetReps: _activeExercise.targetReps,
+        feedback: feedback,
+      );
 
-    if (!mounted) return;
-    setState(() {
-      _adviceLoading = false;
-      _advice = recommendation;
-    });
+      if (!mounted) return;
+
+      setState(() {
+        _advice = recommendation;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('[WeightAdvice] Request failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _adviceLoading = false;
+        });
+      }
+    }
   }
 
   void _applyAdvice() {

@@ -22,6 +22,18 @@ class FakeWorkoutRepository implements WorkoutRepository {
   Future<WorkoutPlan?> planById(String planId) async => null;
 
   @override
+  Future<WorkoutPlan?> planByScheduledDate(
+    String userId,
+    DateTime date,
+  ) async => null;
+
+  @override
+  Future<LoggedSet?> latestSetForExerciseName(
+    String userId,
+    String exerciseName,
+  ) async => null;
+
+  @override
   Future<void> savePlan(WorkoutPlan plan) async {}
 
   @override

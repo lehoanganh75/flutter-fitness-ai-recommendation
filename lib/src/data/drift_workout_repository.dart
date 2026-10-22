@@ -36,10 +36,22 @@ class DriftWorkoutRepository implements WorkoutRepository {
 
     final row = await query.getSingleOrNull();
 
-    if (row == null) {
-      return null;
-    }
+    if (row == null) return null;
+    return _toWorkoutPlan(row);
+  }
 
+  @override
+  Future<domain.WorkoutPlan?> planByScheduledDate(
+    String userId,
+    DateTime date,
+  ) async {
+    final query = database.select(database.workoutPlans)
+      ..where((table) => table.userId.equals(userId))
+      ..where((table) => table.scheduledDate.equals(date))
+      ..limit(1);
+
+    final row = await query.getSingleOrNull();
+    if (row == null) return null;
     return _toWorkoutPlan(row);
   }
 
@@ -55,6 +67,7 @@ class DriftWorkoutRepository implements WorkoutRepository {
             dayOfWeek: plan.dayOfWeek,
             createdAt: plan.createdAt,
             syncStatus: plan.syncStatus.name,
+            scheduledDate: Value(plan.scheduledDate),
           ),
         );
   }
@@ -76,11 +89,7 @@ class DriftWorkoutRepository implements WorkoutRepository {
       ..where((table) => table.id.equals(exerciseId));
 
     final row = await query.getSingleOrNull();
-
-    if (row == null) {
-      return null;
-    }
-
+    if (row == null) return null;
     return _toPlannedExercise(row);
   }
 
@@ -106,37 +115,32 @@ class DriftWorkoutRepository implements WorkoutRepository {
   @override
   Future<void> deletePlan(String planId) async {
     await database.transaction(() async {
-      // Xóa các set đã log thuộc các bài tập của plan
-      final exercises = await (database.select(database.plannedExercises)
-            ..where((table) => table.planId.equals(planId)))
-          .get();
+      final exercises = await (database.select(
+        database.plannedExercises,
+      )..where((table) => table.planId.equals(planId))).get();
       for (final exercise in exercises) {
-        await (database.delete(database.loggedSets)
-              ..where((table) => table.exerciseId.equals(exercise.id)))
-            .go();
+        await (database.delete(
+          database.loggedSets,
+        )..where((table) => table.exerciseId.equals(exercise.id))).go();
       }
-      // Xóa các bài tập của plan
-      await (database.delete(database.plannedExercises)
-            ..where((table) => table.planId.equals(planId)))
-          .go();
-      // Xóa plan
-      await (database.delete(database.workoutPlans)
-            ..where((table) => table.id.equals(planId)))
-          .go();
+      await (database.delete(
+        database.plannedExercises,
+      )..where((table) => table.planId.equals(planId))).go();
+      await (database.delete(
+        database.workoutPlans,
+      )..where((table) => table.id.equals(planId))).go();
     });
   }
 
   @override
   Future<void> deleteExercise(String exerciseId) async {
     await database.transaction(() async {
-      // Xóa các set đã log của bài tập
-      await (database.delete(database.loggedSets)
-            ..where((table) => table.exerciseId.equals(exerciseId)))
-          .go();
-      // Xóa bài tập
-      await (database.delete(database.plannedExercises)
-            ..where((table) => table.id.equals(exerciseId)))
-          .go();
+      await (database.delete(
+        database.loggedSets,
+      )..where((table) => table.exerciseId.equals(exerciseId))).go();
+      await (database.delete(
+        database.plannedExercises,
+      )..where((table) => table.id.equals(exerciseId))).go();
     });
   }
 
@@ -180,13 +184,102 @@ class DriftWorkoutRepository implements WorkoutRepository {
       ..where((table) => table.exerciseId.equals(exerciseId))
       ..orderBy([(table) => OrderingTerm.desc(table.loggedAt)]);
 
-    if (limit != null) {
-      query.limit(limit);
-    }
+    if (limit != null) query.limit(limit);
 
     final rows = await query.get();
-
     return rows.map(_toLoggedSet).toList();
+  }
+
+  @override
+  Future<domain.LoggedSet?> latestSetForExerciseName(
+    String userId,
+    String exerciseName,
+  ) async {
+    final query =
+        database.select(database.loggedSets).join([
+            innerJoin(
+              database.plannedExercises,
+              database.plannedExercises.id.equalsExp(
+                database.loggedSets.exerciseId,
+              ),
+            ),
+            innerJoin(
+              database.workoutPlans,
+              database.workoutPlans.id.equalsExp(
+                database.plannedExercises.planId,
+              ),
+            ),
+          ])
+          ..where(database.workoutPlans.userId.equals(userId))
+          ..where(
+            database.plannedExercises.exercise.lower().equals(
+              exerciseName.trim().toLowerCase(),
+            ),
+          )
+          ..orderBy([OrderingTerm.desc(database.loggedSets.loggedAt)])
+          ..limit(1);
+
+    final row = await query.getSingleOrNull();
+    if (row == null) return null;
+    return _toLoggedSet(row.readTable(database.loggedSets));
+  }
+
+  Future<void> updateProgressCache(String userId, String exerciseName) async {
+    final query =
+        database.select(database.loggedSets).join([
+            innerJoin(
+              database.plannedExercises,
+              database.plannedExercises.id.equalsExp(
+                database.loggedSets.exerciseId,
+              ),
+            ),
+            innerJoin(
+              database.workoutPlans,
+              database.workoutPlans.id.equalsExp(
+                database.plannedExercises.planId,
+              ),
+            ),
+          ])
+          ..where(database.workoutPlans.userId.equals(userId))
+          ..where(database.plannedExercises.exercise.equals(exerciseName));
+
+    final rows = await query.get();
+    if (rows.isEmpty) return;
+
+    double topWeight = 0;
+    int topReps = 0;
+    DateTime lastDate = DateTime(2000);
+    for (final row in rows) {
+      final set = row.readTable(database.loggedSets);
+      if (set.weight > topWeight) {
+        topWeight = set.weight;
+        topReps = set.reps;
+      }
+      if (set.loggedAt.isAfter(lastDate)) {
+        lastDate = set.loggedAt;
+      }
+    }
+
+    await database
+        .into(database.exerciseProgressCaches)
+        .insertOnConflictUpdate(
+          data.ExerciseProgressCachesCompanion.insert(
+            userId: userId,
+            exerciseName: exerciseName,
+            lastTrainedDate: lastDate,
+            topWeight: topWeight,
+            topReps: topReps,
+            totalSets: rows.length,
+          ),
+        );
+  }
+
+  Future<List<data.ExerciseProgressCache>> getAllProgressCache(
+    String userId,
+  ) async {
+    final query = database.select(database.exerciseProgressCaches)
+      ..where((t) => t.userId.equals(userId));
+    return await query.get();
   }
 
   domain.WorkoutPlan _toWorkoutPlan(data.WorkoutPlan row) {
@@ -196,6 +289,7 @@ class DriftWorkoutRepository implements WorkoutRepository {
       title: row.title,
       dayOfWeek: row.dayOfWeek,
       createdAt: row.createdAt,
+      scheduledDate: row.scheduledDate,
       syncStatus: domain.SyncStatus.values.byName(row.syncStatus),
     );
   }
@@ -225,5 +319,24 @@ class DriftWorkoutRepository implements WorkoutRepository {
       loggedAt: row.loggedAt,
       syncStatus: domain.SyncStatus.values.byName(row.syncStatus),
     );
+  }
+
+  Future<void> saveAiSuggestionCache(String cacheKey, String jsonData) async {
+    await database
+        .into(database.aiSuggestionCaches)
+        .insertOnConflictUpdate(
+          data.AiSuggestionCachesCompanion.insert(
+            cacheKey: cacheKey,
+            jsonData: jsonData,
+            createdAt: DateTime.now(),
+          ),
+        );
+  }
+
+  Future<String?> getAiSuggestionCache(String cacheKey) async {
+    final query = database.select(database.aiSuggestionCaches)
+      ..where((t) => t.cacheKey.equals(cacheKey));
+    final row = await query.getSingleOrNull();
+    return row?.jsonData;
   }
 }

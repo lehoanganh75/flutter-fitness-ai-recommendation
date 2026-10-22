@@ -22,12 +22,54 @@ class FakeWorkoutRepository implements WorkoutRepository {
         return plan;
       }
     }
+    return null;
+  }
 
+  @override
+  Future<WorkoutPlan?> planByScheduledDate(String userId, DateTime date) async {
+    final dateOnly = DateTime(date.year, date.month, date.day);
+    for (final plan in plans) {
+      final scheduled = plan.scheduledDate;
+      if (plan.userId == userId &&
+          scheduled != null &&
+          scheduled.year == dateOnly.year &&
+          scheduled.month == dateOnly.month &&
+          scheduled.day == dateOnly.day) {
+        return plan;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Future<LoggedSet?> latestSetForExerciseName(
+    String userId,
+    String exerciseName,
+  ) async {
+    for (final set in loggedSets) {
+      final exercise = exercises.firstWhere(
+        (e) => e.id == set.exerciseId,
+        orElse: () => PlannedExercise(
+          id: '',
+          planId: '',
+          exercise: '',
+          muscleGroup: '',
+          sortOrder: 0,
+          targetSets: 0,
+          targetReps: 0,
+          initialWeight: 0,
+        ),
+      );
+      if (exercise.exercise.toLowerCase() == exerciseName.toLowerCase()) {
+        return set;
+      }
+    }
     return null;
   }
 
   @override
   Future<void> savePlan(WorkoutPlan plan) async {
+    plans.removeWhere((item) => item.id == plan.id);
     plans.add(plan);
   }
 
@@ -39,7 +81,8 @@ class FakeWorkoutRepository implements WorkoutRepository {
 
   @override
   Future<List<PlannedExercise>> exercisesForPlan(String planId) async {
-    return exercises.where((exercise) => exercise.planId == planId).toList();
+    return exercises.where((exercise) => exercise.planId == planId).toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
   }
 
   @override
@@ -49,12 +92,12 @@ class FakeWorkoutRepository implements WorkoutRepository {
         return exercise;
       }
     }
-
     return null;
   }
 
   @override
   Future<void> saveExercise(PlannedExercise exercise) async {
+    exercises.removeWhere((item) => item.id == exercise.id);
     exercises.add(exercise);
   }
 
@@ -66,6 +109,7 @@ class FakeWorkoutRepository implements WorkoutRepository {
 
   @override
   Future<void> saveLoggedSet(LoggedSet loggedSet) async {
+    loggedSets.removeWhere((item) => item.id == loggedSet.id);
     loggedSets.add(loggedSet);
   }
 
@@ -81,9 +125,16 @@ class FakeWorkoutRepository implements WorkoutRepository {
     String exerciseId, {
     int? limit,
   }) async {
-    return loggedSets
-        .where((loggedSet) => loggedSet.exerciseId == exerciseId)
-        .toList();
+    final result =
+        loggedSets
+            .where((loggedSet) => loggedSet.exerciseId == exerciseId)
+            .toList()
+          ..sort((a, b) => b.loggedAt.compareTo(a.loggedAt));
+
+    if (limit == null) {
+      return result;
+    }
+    return result.take(limit).toList();
   }
 }
 
@@ -141,23 +192,16 @@ void main() {
     expect(result?.loggedSetsByExercise['exercise-001'], hasLength(1));
     expect(result?.loggedSetsByExercise['exercise-001']?.single.id, 'set-001');
     expect(result?.loggedSetsByExercise['exercise-001']?.single.reps, 8);
-    expect(result?.muscleGroups, ['Chest']);
-    expect(result?.loggedSetsByExercise['exercise-001'], hasLength(1));
-    expect(result?.loggedSetsByExercise['exercise-001']?.single.id, 'set-001');
-    expect(result?.loggedSetsByExercise['exercise-001']?.single.reps, 8);
 
     final workout = result!;
-
     final activeExercise = workout.activeExercise(
       loggedSetsByExercise: workout.loggedSetsByExercise,
     );
-
     expect(activeExercise?.id, 'exercise-001');
 
     final progress = workout.activeProgress(
       loggedSetsByExercise: workout.loggedSetsByExercise,
     );
-
     expect(progress, isNotNull);
     expect(progress?.completedSets, 1);
     expect(progress?.totalSets, 3);
@@ -168,7 +212,6 @@ void main() {
       exercise: workout.exercises.single,
       loggedSetsByExercise: workout.loggedSetsByExercise,
     );
-
     expect(currentWeight, 50);
   });
 
@@ -183,6 +226,7 @@ void main() {
 
     expect(result, isNull);
   });
+
   test('selects the next exercise after the first one is completed', () async {
     final repository = FakeWorkoutRepository();
 
@@ -251,7 +295,6 @@ void main() {
     final activeExercise = result.activeExercise(
       loggedSetsByExercise: result.loggedSetsByExercise,
     );
-
     expect(activeExercise, isNotNull);
     expect(activeExercise!.id, 'exercise-002');
     expect(activeExercise.exercise, 'Shoulder Press');
@@ -259,96 +302,13 @@ void main() {
     final progress = result.activeProgress(
       loggedSetsByExercise: result.loggedSetsByExercise,
     );
-
     expect(progress, isNotNull);
     expect(progress!.completedSets, 0);
     expect(progress.totalSets, 3);
     expect(progress.currentSet, 1);
     expect(progress.isCompleted, false);
   });
-  test('selects the next exercise after the first one is completed', () async {
-    final repository = FakeWorkoutRepository();
 
-    repository.plans.add(
-      WorkoutPlan(
-        id: 'plan-001',
-        userId: 'user-001',
-        title: 'Push Day',
-        dayOfWeek: 1,
-        createdAt: DateTime(2026, 10, 10),
-      ),
-    );
-
-    repository.exercises.addAll([
-      PlannedExercise(
-        id: 'exercise-001',
-        planId: 'plan-001',
-        exercise: 'Bench Press',
-        muscleGroup: 'Chest',
-        sortOrder: 1,
-        targetSets: 2,
-        targetReps: 10,
-        initialWeight: 50,
-      ),
-      PlannedExercise(
-        id: 'exercise-002',
-        planId: 'plan-001',
-        exercise: 'Shoulder Press',
-        muscleGroup: 'Shoulder',
-        sortOrder: 2,
-        targetSets: 3,
-        targetReps: 8,
-        initialWeight: 20,
-      ),
-    ]);
-
-    repository.loggedSets.addAll([
-      LoggedSet(
-        id: 'set-001',
-        exerciseId: 'exercise-001',
-        setIndex: 1,
-        weight: 50,
-        reps: 10,
-        loggedAt: DateTime(2026, 10, 10, 18),
-      ),
-      LoggedSet(
-        id: 'set-002',
-        exerciseId: 'exercise-001',
-        setIndex: 2,
-        weight: 50,
-        reps: 10,
-        loggedAt: DateTime(2026, 10, 10, 18, 5),
-      ),
-    ]);
-
-    final service = WorkoutService(repository);
-
-    final result = await service.loadTodayWorkout(
-      userId: 'user-001',
-      dayOfWeek: 1,
-    );
-
-    expect(result, isNotNull);
-    expect(result!.exercises, hasLength(2));
-
-    final activeExercise = result.activeExercise(
-      loggedSetsByExercise: result.loggedSetsByExercise,
-    );
-
-    expect(activeExercise, isNotNull);
-    expect(activeExercise!.id, 'exercise-002');
-    expect(activeExercise.exercise, 'Shoulder Press');
-
-    final progress = result.activeProgress(
-      loggedSetsByExercise: result.loggedSetsByExercise,
-    );
-
-    expect(progress, isNotNull);
-    expect(progress!.completedSets, 0);
-    expect(progress.totalSets, 3);
-    expect(progress.currentSet, 1);
-    expect(progress.isCompleted, false);
-  });
   test('returns no active exercise when all exercises are completed', () async {
     final repository = FakeWorkoutRepository();
 
@@ -400,21 +360,19 @@ void main() {
       userId: 'user-001',
       dayOfWeek: 1,
     );
-
     expect(result, isNotNull);
 
     final activeExercise = result!.activeExercise(
       loggedSetsByExercise: result.loggedSetsByExercise,
     );
-
     expect(activeExercise, isNull);
 
     final progress = result.activeProgress(
       loggedSetsByExercise: result.loggedSetsByExercise,
     );
-
     expect(progress, isNull);
   });
+
   test('sorts exercises by sort order', () async {
     final repository = FakeWorkoutRepository();
 

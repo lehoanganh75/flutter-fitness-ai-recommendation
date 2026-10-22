@@ -22,4 +22,11 @@ abstract interface class WorkoutRepository {
   Future<List<LoggedSet>> loggedSetsForExercise(String exerciseId);
 
   Future<List<LoggedSet>> exerciseHistory(String exerciseId, {int? limit});
+
+  Future<WorkoutPlan?> planByScheduledDate(String userId, DateTime date);
+
+  Future<LoggedSet?> latestSetForExerciseName(
+    String userId,
+    String exerciseName,
+  );
 }

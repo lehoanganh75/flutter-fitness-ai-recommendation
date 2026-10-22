@@ -17,7 +17,6 @@ import '../services/stats_service.dart';
 import '../services/suggestion_data_source.dart';
 import '../services/workout_service.dart';
 
-/// Người dùng cục bộ duy nhất.
 const kLocalUserId = 'sample-user';
 
 class AppDependencies {
@@ -41,8 +40,8 @@ class AppDependencies {
   final RecommendationService? recommendationService;
   final WeightAdviceService? weightAdviceService;
 
-  static const _geminiKey = String.fromEnvironment('GEMINI_API_KEY');
-  static const _openRouterKey = String.fromEnvironment('OPENROUTER_API_KEY');
+  static const _proxyUrl = String.fromEnvironment('PROXY_URL');
+  static const _proxyToken = String.fromEnvironment('PROXY_TOKEN');
 
   static Future<AppDependencies> create() async {
     final stopwatch = Stopwatch()..start();
@@ -72,11 +71,11 @@ class AppDependencies {
     await seeder.seedIfEmpty(kLocalUserId);
     logStep('seedIfEmpty');
 
-    final hasAiKey =
-        _geminiKey.trim().isNotEmpty || _openRouterKey.trim().isNotEmpty;
+    final hasAiConfig =
+        _proxyUrl.trim().isNotEmpty && _proxyToken.trim().isNotEmpty;
 
-    final proxy = hasAiKey
-        ? AiProxyClient(apiKey: _geminiKey, openRouterApiKey: _openRouterKey)
+    final proxy = hasAiConfig
+        ? AiProxyClient(proxyUrl: _proxyUrl, proxyToken: _proxyToken)
         : null;
 
     final memoryRetrieval = MemoryRetrieval(memoryRepository);
@@ -94,6 +93,7 @@ class AppDependencies {
       retrieval: memoryRetrieval,
       loadRecentSessions: data.recentSessions,
       loadKnownExercises: data.knownExercises,
+      workoutRepository: workoutRepository, // THÊM DÒNG NÀY
     );
 
     final aiRecommendation = proxy != null ? AiRecommendation(proxy) : null;

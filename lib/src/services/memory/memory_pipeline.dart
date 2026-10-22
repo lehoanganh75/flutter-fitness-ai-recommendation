@@ -66,7 +66,6 @@ class MemoryPipeline {
   }
 
   /// Ưu tiên AI hiểu ngữ cảnh.
-  /// Chỉ dùng luật dự phòng khi không có AI hoặc gọi AI thất bại.
   Future<Memory?> _extract(SetFeedbackEvent event) async {
     final feedback = event.feedbackText.trim();
 
@@ -101,8 +100,27 @@ class MemoryPipeline {
         },
       );
 
-      // AI trả memory null thì không fallback theo từ khóa.
-      return _fromJson(json, event);
+      final memory = _fromJson(json, event);
+
+      if (memory != null) {
+        return memory;
+      }
+
+      final fallbackMemory = MemoryExtractor.extract(event);
+
+      if (fallbackMemory != null) {
+        debugPrint(
+          '[MemoryPipeline] AI returned no valid memory; '
+          'using rule extraction for ${event.exercise}.',
+        );
+        return fallbackMemory;
+      }
+
+      debugPrint(
+        '[MemoryPipeline] AI returned no valid memory '
+        'and rule extraction found no fatigue signal.',
+      );
+      return null;
     } catch (error, stackTrace) {
       debugPrint('[MemoryPipeline] AI extraction failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -187,13 +205,20 @@ class MemoryPipeline {
         .where((memory) => memory.type == incoming.type)
         .toList();
 
-    // Cùng loại fatigue và cùng mức tạ thì gộp memory.
+    // 1. Với Fatigue: Gộp nếu nội dung tương tự (trùng từ khóa chính)
     if (incoming.type == MemoryType.USER_REPORTED_FATIGUE) {
-      final target = sameType
-          .where((memory) => memory.value['weight'] == incoming.value['weight'])
-          .firstOrNull;
+      final target = sameType.firstWhere((memory) {
+        final oldContent = memory.content.toLowerCase();
+        final newContent = incoming.content.toLowerCase();
 
-      if (target != null) {
+        final isSimilar =
+            (oldContent.contains('mệt') && newContent.contains('mệt')) ||
+            (oldContent.contains('nặng') && newContent.contains('nặng')) ||
+            (oldContent.contains('mỏi') && newContent.contains('mỏi'));
+        return isSimilar;
+      }, orElse: () => incoming);
+
+      if (target.id != incoming.id) {
         final previousCount =
             (target.value['occurrences'] as num?)?.toInt() ?? 1;
 
@@ -210,7 +235,7 @@ class MemoryPipeline {
       return [incoming];
     }
 
-    // Preference / performance trend:
+    // 2. Preference / performance trend:
     // memory mới thay thế memory cũ cùng loại.
     return [
       incoming,

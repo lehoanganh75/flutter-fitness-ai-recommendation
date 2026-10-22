@@ -26,6 +26,49 @@ class FakeWorkoutRepository implements WorkoutRepository {
   }
 
   @override
+  Future<WorkoutPlan?> planByScheduledDate(String userId, DateTime date) async {
+    final dateOnly = DateTime(date.year, date.month, date.day);
+    for (final plan in plans) {
+      final scheduled = plan.scheduledDate;
+      if (plan.userId == userId &&
+          scheduled != null &&
+          scheduled.year == dateOnly.year &&
+          scheduled.month == dateOnly.month &&
+          scheduled.day == dateOnly.day) {
+        return plan;
+      }
+    }
+
+    return null;
+  }
+
+  @override
+  Future<LoggedSet?> latestSetForExerciseName(
+    String userId,
+    String exerciseName,
+  ) async {
+    for (final set in loggedSets) {
+      final exercise = exercises.firstWhere(
+        (e) => e.id == set.exerciseId,
+        orElse: () => PlannedExercise(
+          id: '',
+          planId: '',
+          exercise: '',
+          muscleGroup: '',
+          sortOrder: 0,
+          targetSets: 0,
+          targetReps: 0,
+          initialWeight: 0,
+        ),
+      );
+      if (exercise.exercise.toLowerCase() == exerciseName.toLowerCase()) {
+        return set;
+      }
+    }
+    return null;
+  }
+
+  @override
   Future<void> savePlan(WorkoutPlan plan) async {
     plans.removeWhere((item) => item.id == plan.id);
     plans.add(plan);

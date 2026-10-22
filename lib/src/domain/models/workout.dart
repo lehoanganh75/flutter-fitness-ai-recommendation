@@ -7,6 +7,7 @@ class WorkoutPlan {
     required this.title,
     required this.dayOfWeek,
     required this.createdAt,
+    this.scheduledDate,
     this.syncStatus = SyncStatus.pending,
   });
 
@@ -15,6 +16,7 @@ class WorkoutPlan {
   final String title;
   final int dayOfWeek;
   final DateTime createdAt;
+  final DateTime? scheduledDate;
   final SyncStatus syncStatus;
 
   WorkoutPlan copyWith({
@@ -23,6 +25,7 @@ class WorkoutPlan {
     String? title,
     int? dayOfWeek,
     DateTime? createdAt,
+    DateTime? scheduledDate,
     SyncStatus? syncStatus,
   }) => WorkoutPlan(
     id: id ?? this.id,
@@ -30,6 +33,7 @@ class WorkoutPlan {
     title: title ?? this.title,
     dayOfWeek: dayOfWeek ?? this.dayOfWeek,
     createdAt: createdAt ?? this.createdAt,
+    scheduledDate: scheduledDate ?? this.scheduledDate,
     syncStatus: syncStatus ?? this.syncStatus,
   );
 }
@@ -49,12 +53,12 @@ class PlannedExercise {
 
   final String id;
   final String planId;
-  final String exercise; // VD: "Bench Press"
-  final String muscleGroup; // VD: "Chest", "Back"
-  final int sortOrder; // Thứ tự: 1, 2, 3...
-  final int targetSets; // VD: 3 sets
-  final int targetReps; // VD: 10 reps
-  final double initialWeight; // VD: 40.0 kg
+  final String exercise;
+  final String muscleGroup;
+  final int sortOrder;
+  final int targetSets;
+  final int targetReps;
+  final double initialWeight;
   final SyncStatus syncStatus;
 
   PlannedExercise copyWith({
@@ -80,17 +84,15 @@ class PlannedExercise {
   );
 }
 
-/// Set đã tập xong với feedback
-/// VD: Set 1 - 40kg x 8 reps - "Cảm thấy hơi nặng"
 class LoggedSet {
   const LoggedSet({
     required this.id,
-    required this.exerciseId, // Foreign key đến PlannedExercise
-    required this.setIndex, // Set thứ mấy (1, 2, 3...)
-    required this.weight, // Trọng lượng thực tế
-    required this.reps, // Số reps thực tế
-    this.feedbackText, // Feedback từ user (optional)
-    required this.loggedAt, // Thời gian log
+    required this.exerciseId,
+    required this.setIndex,
+    required this.weight,
+    required this.reps,
+    this.feedbackText,
+    required this.loggedAt,
     this.syncStatus = SyncStatus.pending,
   });
 
@@ -99,7 +101,7 @@ class LoggedSet {
   final int setIndex;
   final double weight;
   final int reps;
-  final String? feedbackText; // VD: "Mệt", "Dễ", "Quá nặng"
+  final String? feedbackText;
   final DateTime loggedAt;
   final SyncStatus syncStatus;
 

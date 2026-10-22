@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
+import '../data/drift_workout_repository.dart';
 import '../domain/models/daily_suggestion.dart';
 import 'ai/ai_proxy_client.dart';
 import 'memory/memory_retrieval.dart';
@@ -16,6 +19,7 @@ class DailySuggestionService {
   DailySuggestionService({
     required LoadRecentSessions loadRecentSessions,
     required LoadKnownExercises loadKnownExercises,
+    required this.workoutRepository,
     this._proxy,
     this._retrieval,
     this.historyDays = 3,
@@ -29,9 +33,11 @@ class DailySuggestionService {
   final MemoryRetrieval? _retrieval;
   final int historyDays;
   final Duration aiTimeout;
+  final DriftWorkoutRepository workoutRepository;
 
-  // Chỉ cache kết quả AI (theo user + ngày) để tiết kiệm quota.
   final Map<String, DailySuggestion> _aiCache = {};
+  DateTime? _lastAiRequest;
+  static const _cooldownDuration = Duration(minutes: 2);
 
   static const _warmUp = [
     SuggestedExercise(
@@ -62,9 +68,35 @@ class DailySuggestionService {
     bool forceRefresh = false,
   }) async {
     final key = '$userId|${now.year}-${now.month}-${now.day}';
+
     if (!forceRefresh) {
       final cached = _aiCache[key];
       if (cached != null) return cached;
+
+      final dbCache = await workoutRepository.getAiSuggestionCache(key);
+      if (dbCache != null) {
+        try {
+          final decoded = jsonDecode(dbCache) as Map<String, dynamic>;
+          final suggestion = DailySuggestion(
+            source: SuggestionSource.ai,
+            summary: decoded['summary'] as String? ?? '',
+            exercises: (decoded['exercises'] as List).map((e) {
+              final map = e as Map<String, dynamic>;
+              return SuggestedExercise(
+                name: map['name'] as String,
+                reason: map['reason'] as String? ?? '',
+                sets: (map['sets'] as num?)?.toInt() ?? 3,
+                reps: (map['reps'] as num?)?.toInt() ?? 10,
+                weight: (map['weight'] as num?)?.toDouble() ?? 20.0,
+              );
+            }).toList(),
+          );
+          _aiCache[key] = suggestion;
+          return suggestion;
+        } catch (e) {
+          debugPrint('Lỗi đọc Cache SQLite: $e');
+        }
+      }
     }
 
     final sessions = await _loadRecent(userId, historyDays);
@@ -75,7 +107,16 @@ class DailySuggestionService {
 
     final proxy = _proxy;
     if (proxy != null) {
+      if (forceRefresh && _lastAiRequest != null) {
+        final diff = DateTime.now().difference(_lastAiRequest!);
+        if (diff < _cooldownDuration) {
+          debugPrint('AI cooldown: chưa đủ 2 phút, dùng local.');
+          return _fromHistory(sessions, known);
+        }
+      }
+
       try {
+        _lastAiRequest = DateTime.now();
         final ai = await _fromAi(
           proxy,
           userId,
@@ -88,8 +129,7 @@ class DailySuggestionService {
           return ai;
         }
       } catch (e) {
-        // AI lỗi, hết quota, chưa có token... -> dùng gợi ý local bên dưới.
-        debugPrint('AI suggestion failed: $e');
+        debugPrint('AI suggestion failed (rate limit?): $e');
       }
     }
 
@@ -130,7 +170,6 @@ class DailySuggestionService {
       'memory_context': await _memoryText(userId, sessions),
     };
 
-    // DEBUG: kiểm tra dữ liệu gửi cho AI
     debugPrint('========== AI INPUT DEBUG ==========');
     debugPrint('MEMORY CONTEXT: ${input['memory_context']}');
     debugPrint(
@@ -147,7 +186,6 @@ class DailySuggestionService {
     final list = json['exercises'];
     if (list is! List) return null;
 
-    // Chặn AI bịa bài: chỉ nhận tên có trong danh sách của user.
     final byName = {for (final e in known) e.name.trim().toLowerCase(): e};
     final out = <SuggestedExercise>[];
     for (final item in list) {
@@ -156,11 +194,58 @@ class DailySuggestionService {
       if (name is! String) continue;
       final match = byName[name.trim().toLowerCase()];
       if (match == null || out.any((e) => e.name == match.name)) continue;
+
       final reason = item['reason'];
+
+      int finalSets = 3;
+      int finalReps = 10;
+      double finalWeight = 20.0;
+
+      final history = sessions
+          .where((s) => s.exercise.toLowerCase() == match.name.toLowerCase())
+          .toList();
+
+      if (history.isNotEmpty) {
+        finalReps = history.first.reps ?? 10;
+        finalWeight = history.first.topWeight ?? 20.0;
+      } else {
+        final mg = match.muscleGroup.toLowerCase();
+        if (mg.contains('leg') ||
+            mg.contains('chân') ||
+            mg.contains('squat') ||
+            mg.contains('đùi')) {
+          finalWeight = 40.0;
+        } else if (mg.contains('back') ||
+            mg.contains('lưng') ||
+            mg.contains('xô') ||
+            mg.contains('row') ||
+            mg.contains('deadlift')) {
+          finalWeight = 30.0;
+        } else if (mg.contains('bicep') ||
+            mg.contains('tay') ||
+            mg.contains('forearm') ||
+            mg.contains('curl')) {
+          finalWeight = 10.0;
+        }
+      }
+
+      if (item['sets'] is num && (item['sets'] as num) > 0) {
+        finalSets = (item['sets'] as num).toInt();
+      }
+      if (item['reps'] is num && (item['reps'] as num) > 0) {
+        finalReps = (item['reps'] as num).toInt();
+      }
+      if (item['weight'] is num && (item['weight'] as num) > 0) {
+        finalWeight = (item['weight'] as num).toDouble();
+      }
+
       out.add(
         SuggestedExercise(
           name: match.name,
           reason: reason is String ? _clip(reason, 120) : '',
+          sets: finalSets,
+          reps: finalReps,
+          weight: finalWeight,
         ),
       );
       if (out.length == 5) break;
@@ -168,13 +253,34 @@ class DailySuggestionService {
     if (out.isEmpty) return null;
 
     final summary = json['summary'];
-    return DailySuggestion(
+    final summaryText = summary is String && summary.trim().isNotEmpty
+        ? _clip(summary, 160)
+        : 'Gợi ý cho buổi tập hôm nay';
+
+    final suggestion = DailySuggestion(
       source: SuggestionSource.ai,
-      summary: summary is String && summary.trim().isNotEmpty
-          ? _clip(summary, 160)
-          : 'Gợi ý cho buổi tập hôm nay',
+      summary: summaryText,
       exercises: out,
     );
+
+    final cacheKey = '$userId|${now.year}-${now.month}-${now.day}';
+    final jsonData = jsonEncode({
+      'summary': summaryText,
+      'exercises': out
+          .map(
+            (e) => {
+              'name': e.name,
+              'reason': e.reason,
+              'sets': e.sets,
+              'reps': e.reps,
+              'weight': e.weight,
+            },
+          )
+          .toList(),
+    });
+    await workoutRepository.saveAiSuggestionCache(cacheKey, jsonData);
+
+    return suggestion;
   }
 
   Future<String> _memoryText(
@@ -204,9 +310,7 @@ class DailySuggestionService {
 
         for (final memory in memories) {
           final content = memory.content.trim();
-
           if (content.isEmpty) continue;
-
           lines.add('- ${memory.exercise}: ${_clip(content, 120)}');
         }
       }
@@ -219,7 +323,6 @@ class DailySuggestionService {
     }
   }
 
-  /// Local: chọn nhóm cơ lâu chưa tập nhất (hoặc chưa tập lần nào).
   DailySuggestion _fromHistory(
     List<RecentSession> sessions,
     List<KnownExercise> known,

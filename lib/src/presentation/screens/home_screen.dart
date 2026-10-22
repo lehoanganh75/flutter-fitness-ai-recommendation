@@ -30,15 +30,8 @@ class HomeScreen extends StatefulWidget {
   final bool isLoading;
   final String? errorMessage;
   final VoidCallback? onStartWorkout;
-
-  /// Chuyển sang tab Giáo án khi chưa có buổi tập nào.
   final VoidCallback? onOpenPlan;
-
-  /// Đổi giá trị này để buộc Trang chủ tải lại dữ liệu
-  /// (ví dụ sau khi người dùng vừa tập xong).
   final int refreshToken;
-
-  /// Đổi giá trị này để buộc AI tạo lại gợi ý (chỉ nên đổi sau khi tập xong).
   final int suggestionRefreshToken;
 
   @override
@@ -52,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   DailySuggestion? _suggestion;
   bool _suggestionLoading = false;
+  bool _applying = false;
 
   DateTime get _today => widget.now ?? DateTime.now();
 
@@ -86,6 +80,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final service = widget.dailySuggestionService;
     if (service == null) return;
 
+    if (_suggestion != null && !force) return;
+
     setState(() => _suggestionLoading = true);
     try {
       final suggestion = await service.suggest(
@@ -109,7 +105,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final service = widget.workoutService;
     if (service == null) return;
 
-    // silent: tải lại ngầm, không hiện vòng xoay (tránh nháy khi đổi tab).
     if (!silent) {
       setState(() {
         _loading = true;
@@ -121,6 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final workout = await service.loadTodayWorkout(
         userId: widget.userId,
         dayOfWeek: _today.weekday,
+        today: _today,
       );
       if (mounted) {
         setState(() {
@@ -140,6 +136,60 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _applySuggestionToToday() async {
+    final suggestion = _suggestion;
+    final service = widget.workoutService;
+    if (suggestion == null || service == null || _applying) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Áp dụng gợi ý AI'),
+        content: Text(
+          'Thêm ${suggestion.exercises.length} bài vào plan hôm nay? '
+          'Bài trùng tên sẽ được bỏ qua.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Áp dụng'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _applying = true);
+
+    try {
+      await service.applySuggestionToToday(
+        userId: widget.userId,
+        exercises: suggestion.exercises,
+        today: _today,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã áp dụng gợi ý vào plan hôm nay'),
+          backgroundColor: Color(0xFF16A34A),
+        ),
+      );
+      await _loadWorkout(silent: true);
+    } catch (e) {
+      debugPrint('Apply suggestion failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Không áp dụng được: $e')));
+    } finally {
+      if (mounted) setState(() => _applying = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -151,11 +201,12 @@ class _HomeScreenState extends State<HomeScreen> {
             _SuggestionCard(
               suggestion: _suggestion,
               loading: _suggestionLoading,
+              applying: _applying,
               onRefresh: () => _loadSuggestion(force: true),
+              onApplyToToday: _applySuggestionToToday,
             ),
             const SizedBox(height: 12),
           ],
-          // Buổi tập hôm nay
           if (_loading)
             const Center(child: CircularProgressIndicator())
           else if (_error != null)
@@ -248,12 +299,16 @@ class _SuggestionCard extends StatelessWidget {
   const _SuggestionCard({
     required this.suggestion,
     required this.loading,
+    required this.applying,
     required this.onRefresh,
+    required this.onApplyToToday,
   });
 
   final DailySuggestion? suggestion;
   final bool loading;
+  final bool applying;
   final VoidCallback onRefresh;
+  final VoidCallback onApplyToToday;
 
   String _label(SuggestionSource s) => switch (s) {
     SuggestionSource.ai => 'AI gợi ý',
@@ -274,7 +329,6 @@ class _SuggestionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Hàng tiêu đề: biểu tượng | tiêu đề + nguồn (co giãn) | làm mới
             Row(
               children: [
                 Container(
@@ -364,6 +418,15 @@ class _SuggestionCard extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${s.exercises[i].sets} hiệp x ${s.exercises[i].reps} lần · ${s.exercises[i].weight.toStringAsFixed(0)} kg',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
                             if (s.exercises[i].reason.isNotEmpty)
                               Text(
                                 s.exercises[i].reason,
@@ -377,6 +440,23 @@ class _SuggestionCard extends StatelessWidget {
                     ],
                   ),
                 ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: (loading || applying) ? null : onApplyToToday,
+                  icon: applying
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.today),
+                  label: Text(
+                    applying ? 'Đang áp dụng...' : 'Áp dụng vào hôm nay',
+                  ),
+                ),
+              ),
             ],
           ],
         ),

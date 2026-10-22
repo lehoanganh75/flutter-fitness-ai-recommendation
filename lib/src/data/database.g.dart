@@ -821,6 +821,18 @@ class $WorkoutPlansTable extends WorkoutPlans
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _scheduledDateMeta = const VerificationMeta(
+    'scheduledDate',
+  );
+  @override
+  late final GeneratedColumn<DateTime> scheduledDate =
+      GeneratedColumn<DateTime>(
+        'scheduled_date',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -829,6 +841,7 @@ class $WorkoutPlansTable extends WorkoutPlans
     dayOfWeek,
     createdAt,
     syncStatus,
+    scheduledDate,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -887,6 +900,15 @@ class $WorkoutPlansTable extends WorkoutPlans
     } else if (isInserting) {
       context.missing(_syncStatusMeta);
     }
+    if (data.containsKey('scheduled_date')) {
+      context.handle(
+        _scheduledDateMeta,
+        scheduledDate.isAcceptableOrUnknown(
+          data['scheduled_date']!,
+          _scheduledDateMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -920,6 +942,10 @@ class $WorkoutPlansTable extends WorkoutPlans
         DriftSqlType.string,
         data['${effectivePrefix}sync_status'],
       )!,
+      scheduledDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}scheduled_date'],
+      ),
     );
   }
 
@@ -936,6 +962,7 @@ class WorkoutPlan extends DataClass implements Insertable<WorkoutPlan> {
   final int dayOfWeek;
   final DateTime createdAt;
   final String syncStatus;
+  final DateTime? scheduledDate;
   const WorkoutPlan({
     required this.id,
     required this.userId,
@@ -943,6 +970,7 @@ class WorkoutPlan extends DataClass implements Insertable<WorkoutPlan> {
     required this.dayOfWeek,
     required this.createdAt,
     required this.syncStatus,
+    this.scheduledDate,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -953,6 +981,9 @@ class WorkoutPlan extends DataClass implements Insertable<WorkoutPlan> {
     map['day_of_week'] = Variable<int>(dayOfWeek);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['sync_status'] = Variable<String>(syncStatus);
+    if (!nullToAbsent || scheduledDate != null) {
+      map['scheduled_date'] = Variable<DateTime>(scheduledDate);
+    }
     return map;
   }
 
@@ -964,6 +995,9 @@ class WorkoutPlan extends DataClass implements Insertable<WorkoutPlan> {
       dayOfWeek: Value(dayOfWeek),
       createdAt: Value(createdAt),
       syncStatus: Value(syncStatus),
+      scheduledDate: scheduledDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(scheduledDate),
     );
   }
 
@@ -979,6 +1013,7 @@ class WorkoutPlan extends DataClass implements Insertable<WorkoutPlan> {
       dayOfWeek: serializer.fromJson<int>(json['dayOfWeek']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
+      scheduledDate: serializer.fromJson<DateTime?>(json['scheduledDate']),
     );
   }
   @override
@@ -991,6 +1026,7 @@ class WorkoutPlan extends DataClass implements Insertable<WorkoutPlan> {
       'dayOfWeek': serializer.toJson<int>(dayOfWeek),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'syncStatus': serializer.toJson<String>(syncStatus),
+      'scheduledDate': serializer.toJson<DateTime?>(scheduledDate),
     };
   }
 
@@ -1001,6 +1037,7 @@ class WorkoutPlan extends DataClass implements Insertable<WorkoutPlan> {
     int? dayOfWeek,
     DateTime? createdAt,
     String? syncStatus,
+    Value<DateTime?> scheduledDate = const Value.absent(),
   }) => WorkoutPlan(
     id: id ?? this.id,
     userId: userId ?? this.userId,
@@ -1008,6 +1045,9 @@ class WorkoutPlan extends DataClass implements Insertable<WorkoutPlan> {
     dayOfWeek: dayOfWeek ?? this.dayOfWeek,
     createdAt: createdAt ?? this.createdAt,
     syncStatus: syncStatus ?? this.syncStatus,
+    scheduledDate: scheduledDate.present
+        ? scheduledDate.value
+        : this.scheduledDate,
   );
   WorkoutPlan copyWithCompanion(WorkoutPlansCompanion data) {
     return WorkoutPlan(
@@ -1019,6 +1059,9 @@ class WorkoutPlan extends DataClass implements Insertable<WorkoutPlan> {
       syncStatus: data.syncStatus.present
           ? data.syncStatus.value
           : this.syncStatus,
+      scheduledDate: data.scheduledDate.present
+          ? data.scheduledDate.value
+          : this.scheduledDate,
     );
   }
 
@@ -1030,14 +1073,22 @@ class WorkoutPlan extends DataClass implements Insertable<WorkoutPlan> {
           ..write('title: $title, ')
           ..write('dayOfWeek: $dayOfWeek, ')
           ..write('createdAt: $createdAt, ')
-          ..write('syncStatus: $syncStatus')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('scheduledDate: $scheduledDate')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, userId, title, dayOfWeek, createdAt, syncStatus);
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    title,
+    dayOfWeek,
+    createdAt,
+    syncStatus,
+    scheduledDate,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1047,7 +1098,8 @@ class WorkoutPlan extends DataClass implements Insertable<WorkoutPlan> {
           other.title == this.title &&
           other.dayOfWeek == this.dayOfWeek &&
           other.createdAt == this.createdAt &&
-          other.syncStatus == this.syncStatus);
+          other.syncStatus == this.syncStatus &&
+          other.scheduledDate == this.scheduledDate);
 }
 
 class WorkoutPlansCompanion extends UpdateCompanion<WorkoutPlan> {
@@ -1057,6 +1109,7 @@ class WorkoutPlansCompanion extends UpdateCompanion<WorkoutPlan> {
   final Value<int> dayOfWeek;
   final Value<DateTime> createdAt;
   final Value<String> syncStatus;
+  final Value<DateTime?> scheduledDate;
   final Value<int> rowid;
   const WorkoutPlansCompanion({
     this.id = const Value.absent(),
@@ -1065,6 +1118,7 @@ class WorkoutPlansCompanion extends UpdateCompanion<WorkoutPlan> {
     this.dayOfWeek = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
+    this.scheduledDate = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   WorkoutPlansCompanion.insert({
@@ -1074,6 +1128,7 @@ class WorkoutPlansCompanion extends UpdateCompanion<WorkoutPlan> {
     required int dayOfWeek,
     required DateTime createdAt,
     required String syncStatus,
+    this.scheduledDate = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        userId = Value(userId),
@@ -1088,6 +1143,7 @@ class WorkoutPlansCompanion extends UpdateCompanion<WorkoutPlan> {
     Expression<int>? dayOfWeek,
     Expression<DateTime>? createdAt,
     Expression<String>? syncStatus,
+    Expression<DateTime>? scheduledDate,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1097,6 +1153,7 @@ class WorkoutPlansCompanion extends UpdateCompanion<WorkoutPlan> {
       if (dayOfWeek != null) 'day_of_week': dayOfWeek,
       if (createdAt != null) 'created_at': createdAt,
       if (syncStatus != null) 'sync_status': syncStatus,
+      if (scheduledDate != null) 'scheduled_date': scheduledDate,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1108,6 +1165,7 @@ class WorkoutPlansCompanion extends UpdateCompanion<WorkoutPlan> {
     Value<int>? dayOfWeek,
     Value<DateTime>? createdAt,
     Value<String>? syncStatus,
+    Value<DateTime?>? scheduledDate,
     Value<int>? rowid,
   }) {
     return WorkoutPlansCompanion(
@@ -1117,6 +1175,7 @@ class WorkoutPlansCompanion extends UpdateCompanion<WorkoutPlan> {
       dayOfWeek: dayOfWeek ?? this.dayOfWeek,
       createdAt: createdAt ?? this.createdAt,
       syncStatus: syncStatus ?? this.syncStatus,
+      scheduledDate: scheduledDate ?? this.scheduledDate,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1142,6 +1201,9 @@ class WorkoutPlansCompanion extends UpdateCompanion<WorkoutPlan> {
     if (syncStatus.present) {
       map['sync_status'] = Variable<String>(syncStatus.value);
     }
+    if (scheduledDate.present) {
+      map['scheduled_date'] = Variable<DateTime>(scheduledDate.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1157,6 +1219,7 @@ class WorkoutPlansCompanion extends UpdateCompanion<WorkoutPlan> {
           ..write('dayOfWeek: $dayOfWeek, ')
           ..write('createdAt: $createdAt, ')
           ..write('syncStatus: $syncStatus, ')
+          ..write('scheduledDate: $scheduledDate, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2255,6 +2318,710 @@ class LoggedSetsCompanion extends UpdateCompanion<LoggedSet> {
   }
 }
 
+class $ExerciseProgressCachesTable extends ExerciseProgressCaches
+    with TableInfo<$ExerciseProgressCachesTable, ExerciseProgressCache> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ExerciseProgressCachesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _exerciseNameMeta = const VerificationMeta(
+    'exerciseName',
+  );
+  @override
+  late final GeneratedColumn<String> exerciseName = GeneratedColumn<String>(
+    'exercise_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lastTrainedDateMeta = const VerificationMeta(
+    'lastTrainedDate',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastTrainedDate =
+      GeneratedColumn<DateTime>(
+        'last_trained_date',
+        aliasedName,
+        false,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _topWeightMeta = const VerificationMeta(
+    'topWeight',
+  );
+  @override
+  late final GeneratedColumn<double> topWeight = GeneratedColumn<double>(
+    'top_weight',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _topRepsMeta = const VerificationMeta(
+    'topReps',
+  );
+  @override
+  late final GeneratedColumn<int> topReps = GeneratedColumn<int>(
+    'top_reps',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _totalSetsMeta = const VerificationMeta(
+    'totalSets',
+  );
+  @override
+  late final GeneratedColumn<int> totalSets = GeneratedColumn<int>(
+    'total_sets',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    exerciseName,
+    lastTrainedDate,
+    topWeight,
+    topReps,
+    totalSets,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'exercise_progress_caches';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ExerciseProgressCache> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('exercise_name')) {
+      context.handle(
+        _exerciseNameMeta,
+        exerciseName.isAcceptableOrUnknown(
+          data['exercise_name']!,
+          _exerciseNameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_exerciseNameMeta);
+    }
+    if (data.containsKey('last_trained_date')) {
+      context.handle(
+        _lastTrainedDateMeta,
+        lastTrainedDate.isAcceptableOrUnknown(
+          data['last_trained_date']!,
+          _lastTrainedDateMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_lastTrainedDateMeta);
+    }
+    if (data.containsKey('top_weight')) {
+      context.handle(
+        _topWeightMeta,
+        topWeight.isAcceptableOrUnknown(data['top_weight']!, _topWeightMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_topWeightMeta);
+    }
+    if (data.containsKey('top_reps')) {
+      context.handle(
+        _topRepsMeta,
+        topReps.isAcceptableOrUnknown(data['top_reps']!, _topRepsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_topRepsMeta);
+    }
+    if (data.containsKey('total_sets')) {
+      context.handle(
+        _totalSetsMeta,
+        totalSets.isAcceptableOrUnknown(data['total_sets']!, _totalSetsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_totalSetsMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, exerciseName};
+  @override
+  ExerciseProgressCache map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ExerciseProgressCache(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      exerciseName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}exercise_name'],
+      )!,
+      lastTrainedDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_trained_date'],
+      )!,
+      topWeight: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}top_weight'],
+      )!,
+      topReps: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}top_reps'],
+      )!,
+      totalSets: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}total_sets'],
+      )!,
+    );
+  }
+
+  @override
+  $ExerciseProgressCachesTable createAlias(String alias) {
+    return $ExerciseProgressCachesTable(attachedDatabase, alias);
+  }
+}
+
+class ExerciseProgressCache extends DataClass
+    implements Insertable<ExerciseProgressCache> {
+  final String userId;
+  final String exerciseName;
+  final DateTime lastTrainedDate;
+  final double topWeight;
+  final int topReps;
+  final int totalSets;
+  const ExerciseProgressCache({
+    required this.userId,
+    required this.exerciseName,
+    required this.lastTrainedDate,
+    required this.topWeight,
+    required this.topReps,
+    required this.totalSets,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['exercise_name'] = Variable<String>(exerciseName);
+    map['last_trained_date'] = Variable<DateTime>(lastTrainedDate);
+    map['top_weight'] = Variable<double>(topWeight);
+    map['top_reps'] = Variable<int>(topReps);
+    map['total_sets'] = Variable<int>(totalSets);
+    return map;
+  }
+
+  ExerciseProgressCachesCompanion toCompanion(bool nullToAbsent) {
+    return ExerciseProgressCachesCompanion(
+      userId: Value(userId),
+      exerciseName: Value(exerciseName),
+      lastTrainedDate: Value(lastTrainedDate),
+      topWeight: Value(topWeight),
+      topReps: Value(topReps),
+      totalSets: Value(totalSets),
+    );
+  }
+
+  factory ExerciseProgressCache.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ExerciseProgressCache(
+      userId: serializer.fromJson<String>(json['userId']),
+      exerciseName: serializer.fromJson<String>(json['exerciseName']),
+      lastTrainedDate: serializer.fromJson<DateTime>(json['lastTrainedDate']),
+      topWeight: serializer.fromJson<double>(json['topWeight']),
+      topReps: serializer.fromJson<int>(json['topReps']),
+      totalSets: serializer.fromJson<int>(json['totalSets']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'exerciseName': serializer.toJson<String>(exerciseName),
+      'lastTrainedDate': serializer.toJson<DateTime>(lastTrainedDate),
+      'topWeight': serializer.toJson<double>(topWeight),
+      'topReps': serializer.toJson<int>(topReps),
+      'totalSets': serializer.toJson<int>(totalSets),
+    };
+  }
+
+  ExerciseProgressCache copyWith({
+    String? userId,
+    String? exerciseName,
+    DateTime? lastTrainedDate,
+    double? topWeight,
+    int? topReps,
+    int? totalSets,
+  }) => ExerciseProgressCache(
+    userId: userId ?? this.userId,
+    exerciseName: exerciseName ?? this.exerciseName,
+    lastTrainedDate: lastTrainedDate ?? this.lastTrainedDate,
+    topWeight: topWeight ?? this.topWeight,
+    topReps: topReps ?? this.topReps,
+    totalSets: totalSets ?? this.totalSets,
+  );
+  ExerciseProgressCache copyWithCompanion(
+    ExerciseProgressCachesCompanion data,
+  ) {
+    return ExerciseProgressCache(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      exerciseName: data.exerciseName.present
+          ? data.exerciseName.value
+          : this.exerciseName,
+      lastTrainedDate: data.lastTrainedDate.present
+          ? data.lastTrainedDate.value
+          : this.lastTrainedDate,
+      topWeight: data.topWeight.present ? data.topWeight.value : this.topWeight,
+      topReps: data.topReps.present ? data.topReps.value : this.topReps,
+      totalSets: data.totalSets.present ? data.totalSets.value : this.totalSets,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExerciseProgressCache(')
+          ..write('userId: $userId, ')
+          ..write('exerciseName: $exerciseName, ')
+          ..write('lastTrainedDate: $lastTrainedDate, ')
+          ..write('topWeight: $topWeight, ')
+          ..write('topReps: $topReps, ')
+          ..write('totalSets: $totalSets')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    exerciseName,
+    lastTrainedDate,
+    topWeight,
+    topReps,
+    totalSets,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExerciseProgressCache &&
+          other.userId == this.userId &&
+          other.exerciseName == this.exerciseName &&
+          other.lastTrainedDate == this.lastTrainedDate &&
+          other.topWeight == this.topWeight &&
+          other.topReps == this.topReps &&
+          other.totalSets == this.totalSets);
+}
+
+class ExerciseProgressCachesCompanion
+    extends UpdateCompanion<ExerciseProgressCache> {
+  final Value<String> userId;
+  final Value<String> exerciseName;
+  final Value<DateTime> lastTrainedDate;
+  final Value<double> topWeight;
+  final Value<int> topReps;
+  final Value<int> totalSets;
+  final Value<int> rowid;
+  const ExerciseProgressCachesCompanion({
+    this.userId = const Value.absent(),
+    this.exerciseName = const Value.absent(),
+    this.lastTrainedDate = const Value.absent(),
+    this.topWeight = const Value.absent(),
+    this.topReps = const Value.absent(),
+    this.totalSets = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ExerciseProgressCachesCompanion.insert({
+    required String userId,
+    required String exerciseName,
+    required DateTime lastTrainedDate,
+    required double topWeight,
+    required int topReps,
+    required int totalSets,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       exerciseName = Value(exerciseName),
+       lastTrainedDate = Value(lastTrainedDate),
+       topWeight = Value(topWeight),
+       topReps = Value(topReps),
+       totalSets = Value(totalSets);
+  static Insertable<ExerciseProgressCache> custom({
+    Expression<String>? userId,
+    Expression<String>? exerciseName,
+    Expression<DateTime>? lastTrainedDate,
+    Expression<double>? topWeight,
+    Expression<int>? topReps,
+    Expression<int>? totalSets,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (exerciseName != null) 'exercise_name': exerciseName,
+      if (lastTrainedDate != null) 'last_trained_date': lastTrainedDate,
+      if (topWeight != null) 'top_weight': topWeight,
+      if (topReps != null) 'top_reps': topReps,
+      if (totalSets != null) 'total_sets': totalSets,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ExerciseProgressCachesCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? exerciseName,
+    Value<DateTime>? lastTrainedDate,
+    Value<double>? topWeight,
+    Value<int>? topReps,
+    Value<int>? totalSets,
+    Value<int>? rowid,
+  }) {
+    return ExerciseProgressCachesCompanion(
+      userId: userId ?? this.userId,
+      exerciseName: exerciseName ?? this.exerciseName,
+      lastTrainedDate: lastTrainedDate ?? this.lastTrainedDate,
+      topWeight: topWeight ?? this.topWeight,
+      topReps: topReps ?? this.topReps,
+      totalSets: totalSets ?? this.totalSets,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (exerciseName.present) {
+      map['exercise_name'] = Variable<String>(exerciseName.value);
+    }
+    if (lastTrainedDate.present) {
+      map['last_trained_date'] = Variable<DateTime>(lastTrainedDate.value);
+    }
+    if (topWeight.present) {
+      map['top_weight'] = Variable<double>(topWeight.value);
+    }
+    if (topReps.present) {
+      map['top_reps'] = Variable<int>(topReps.value);
+    }
+    if (totalSets.present) {
+      map['total_sets'] = Variable<int>(totalSets.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExerciseProgressCachesCompanion(')
+          ..write('userId: $userId, ')
+          ..write('exerciseName: $exerciseName, ')
+          ..write('lastTrainedDate: $lastTrainedDate, ')
+          ..write('topWeight: $topWeight, ')
+          ..write('topReps: $topReps, ')
+          ..write('totalSets: $totalSets, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $AiSuggestionCachesTable extends AiSuggestionCaches
+    with TableInfo<$AiSuggestionCachesTable, AiSuggestionCache> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AiSuggestionCachesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _cacheKeyMeta = const VerificationMeta(
+    'cacheKey',
+  );
+  @override
+  late final GeneratedColumn<String> cacheKey = GeneratedColumn<String>(
+    'cache_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _jsonDataMeta = const VerificationMeta(
+    'jsonData',
+  );
+  @override
+  late final GeneratedColumn<String> jsonData = GeneratedColumn<String>(
+    'json_data',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [cacheKey, jsonData, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'ai_suggestion_caches';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AiSuggestionCache> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('cache_key')) {
+      context.handle(
+        _cacheKeyMeta,
+        cacheKey.isAcceptableOrUnknown(data['cache_key']!, _cacheKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_cacheKeyMeta);
+    }
+    if (data.containsKey('json_data')) {
+      context.handle(
+        _jsonDataMeta,
+        jsonData.isAcceptableOrUnknown(data['json_data']!, _jsonDataMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_jsonDataMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {cacheKey};
+  @override
+  AiSuggestionCache map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AiSuggestionCache(
+      cacheKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cache_key'],
+      )!,
+      jsonData: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}json_data'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $AiSuggestionCachesTable createAlias(String alias) {
+    return $AiSuggestionCachesTable(attachedDatabase, alias);
+  }
+}
+
+class AiSuggestionCache extends DataClass
+    implements Insertable<AiSuggestionCache> {
+  final String cacheKey;
+  final String jsonData;
+  final DateTime createdAt;
+  const AiSuggestionCache({
+    required this.cacheKey,
+    required this.jsonData,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['cache_key'] = Variable<String>(cacheKey);
+    map['json_data'] = Variable<String>(jsonData);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  AiSuggestionCachesCompanion toCompanion(bool nullToAbsent) {
+    return AiSuggestionCachesCompanion(
+      cacheKey: Value(cacheKey),
+      jsonData: Value(jsonData),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory AiSuggestionCache.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AiSuggestionCache(
+      cacheKey: serializer.fromJson<String>(json['cacheKey']),
+      jsonData: serializer.fromJson<String>(json['jsonData']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'cacheKey': serializer.toJson<String>(cacheKey),
+      'jsonData': serializer.toJson<String>(jsonData),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  AiSuggestionCache copyWith({
+    String? cacheKey,
+    String? jsonData,
+    DateTime? createdAt,
+  }) => AiSuggestionCache(
+    cacheKey: cacheKey ?? this.cacheKey,
+    jsonData: jsonData ?? this.jsonData,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  AiSuggestionCache copyWithCompanion(AiSuggestionCachesCompanion data) {
+    return AiSuggestionCache(
+      cacheKey: data.cacheKey.present ? data.cacheKey.value : this.cacheKey,
+      jsonData: data.jsonData.present ? data.jsonData.value : this.jsonData,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AiSuggestionCache(')
+          ..write('cacheKey: $cacheKey, ')
+          ..write('jsonData: $jsonData, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(cacheKey, jsonData, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AiSuggestionCache &&
+          other.cacheKey == this.cacheKey &&
+          other.jsonData == this.jsonData &&
+          other.createdAt == this.createdAt);
+}
+
+class AiSuggestionCachesCompanion extends UpdateCompanion<AiSuggestionCache> {
+  final Value<String> cacheKey;
+  final Value<String> jsonData;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const AiSuggestionCachesCompanion({
+    this.cacheKey = const Value.absent(),
+    this.jsonData = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AiSuggestionCachesCompanion.insert({
+    required String cacheKey,
+    required String jsonData,
+    required DateTime createdAt,
+    this.rowid = const Value.absent(),
+  }) : cacheKey = Value(cacheKey),
+       jsonData = Value(jsonData),
+       createdAt = Value(createdAt);
+  static Insertable<AiSuggestionCache> custom({
+    Expression<String>? cacheKey,
+    Expression<String>? jsonData,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (cacheKey != null) 'cache_key': cacheKey,
+      if (jsonData != null) 'json_data': jsonData,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AiSuggestionCachesCompanion copyWith({
+    Value<String>? cacheKey,
+    Value<String>? jsonData,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return AiSuggestionCachesCompanion(
+      cacheKey: cacheKey ?? this.cacheKey,
+      jsonData: jsonData ?? this.jsonData,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (cacheKey.present) {
+      map['cache_key'] = Variable<String>(cacheKey.value);
+    }
+    if (jsonData.present) {
+      map['json_data'] = Variable<String>(jsonData.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AiSuggestionCachesCompanion(')
+          ..write('cacheKey: $cacheKey, ')
+          ..write('jsonData: $jsonData, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2264,6 +3031,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $LoggedSetsTable loggedSets = $LoggedSetsTable(this);
+  late final $ExerciseProgressCachesTable exerciseProgressCaches =
+      $ExerciseProgressCachesTable(this);
+  late final $AiSuggestionCachesTable aiSuggestionCaches =
+      $AiSuggestionCachesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2273,6 +3044,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     workoutPlans,
     plannedExercises,
     loggedSets,
+    exerciseProgressCaches,
+    aiSuggestionCaches,
   ];
 }
 
@@ -2641,6 +3414,7 @@ typedef $$WorkoutPlansTableCreateCompanionBuilder =
       required int dayOfWeek,
       required DateTime createdAt,
       required String syncStatus,
+      Value<DateTime?> scheduledDate,
       Value<int> rowid,
     });
 typedef $$WorkoutPlansTableUpdateCompanionBuilder =
@@ -2651,6 +3425,7 @@ typedef $$WorkoutPlansTableUpdateCompanionBuilder =
       Value<int> dayOfWeek,
       Value<DateTime> createdAt,
       Value<String> syncStatus,
+      Value<DateTime?> scheduledDate,
       Value<int> rowid,
     });
 
@@ -2690,6 +3465,11 @@ class $$WorkoutPlansTableFilterComposer
 
   ColumnFilters<String> get syncStatus => $composableBuilder(
     column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get scheduledDate => $composableBuilder(
+    column: $table.scheduledDate,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -2732,6 +3512,11 @@ class $$WorkoutPlansTableOrderingComposer
     column: $table.syncStatus,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get scheduledDate => $composableBuilder(
+    column: $table.scheduledDate,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$WorkoutPlansTableAnnotationComposer
@@ -2760,6 +3545,11 @@ class $$WorkoutPlansTableAnnotationComposer
 
   GeneratedColumn<String> get syncStatus => $composableBuilder(
     column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get scheduledDate => $composableBuilder(
+    column: $table.scheduledDate,
     builder: (column) => column,
   );
 }
@@ -2801,6 +3591,7 @@ class $$WorkoutPlansTableTableManager
                 Value<int> dayOfWeek = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
+                Value<DateTime?> scheduledDate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WorkoutPlansCompanion(
                 id: id,
@@ -2809,6 +3600,7 @@ class $$WorkoutPlansTableTableManager
                 dayOfWeek: dayOfWeek,
                 createdAt: createdAt,
                 syncStatus: syncStatus,
+                scheduledDate: scheduledDate,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -2819,6 +3611,7 @@ class $$WorkoutPlansTableTableManager
                 required int dayOfWeek,
                 required DateTime createdAt,
                 required String syncStatus,
+                Value<DateTime?> scheduledDate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WorkoutPlansCompanion.insert(
                 id: id,
@@ -2827,6 +3620,7 @@ class $$WorkoutPlansTableTableManager
                 dayOfWeek: dayOfWeek,
                 createdAt: createdAt,
                 syncStatus: syncStatus,
+                scheduledDate: scheduledDate,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -3431,6 +4225,446 @@ typedef $$LoggedSetsTableProcessedTableManager =
       LoggedSet,
       PrefetchHooks Function()
     >;
+typedef $$ExerciseProgressCachesTableCreateCompanionBuilder =
+    ExerciseProgressCachesCompanion Function({
+      required String userId,
+      required String exerciseName,
+      required DateTime lastTrainedDate,
+      required double topWeight,
+      required int topReps,
+      required int totalSets,
+      Value<int> rowid,
+    });
+typedef $$ExerciseProgressCachesTableUpdateCompanionBuilder =
+    ExerciseProgressCachesCompanion Function({
+      Value<String> userId,
+      Value<String> exerciseName,
+      Value<DateTime> lastTrainedDate,
+      Value<double> topWeight,
+      Value<int> topReps,
+      Value<int> totalSets,
+      Value<int> rowid,
+    });
+
+class $$ExerciseProgressCachesTableFilterComposer
+    extends Composer<_$AppDatabase, $ExerciseProgressCachesTable> {
+  $$ExerciseProgressCachesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get exerciseName => $composableBuilder(
+    column: $table.exerciseName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastTrainedDate => $composableBuilder(
+    column: $table.lastTrainedDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get topWeight => $composableBuilder(
+    column: $table.topWeight,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get topReps => $composableBuilder(
+    column: $table.topReps,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get totalSets => $composableBuilder(
+    column: $table.totalSets,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ExerciseProgressCachesTableOrderingComposer
+    extends Composer<_$AppDatabase, $ExerciseProgressCachesTable> {
+  $$ExerciseProgressCachesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get exerciseName => $composableBuilder(
+    column: $table.exerciseName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastTrainedDate => $composableBuilder(
+    column: $table.lastTrainedDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get topWeight => $composableBuilder(
+    column: $table.topWeight,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get topReps => $composableBuilder(
+    column: $table.topReps,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get totalSets => $composableBuilder(
+    column: $table.totalSets,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ExerciseProgressCachesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ExerciseProgressCachesTable> {
+  $$ExerciseProgressCachesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get exerciseName => $composableBuilder(
+    column: $table.exerciseName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get lastTrainedDate => $composableBuilder(
+    column: $table.lastTrainedDate,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get topWeight =>
+      $composableBuilder(column: $table.topWeight, builder: (column) => column);
+
+  GeneratedColumn<int> get topReps =>
+      $composableBuilder(column: $table.topReps, builder: (column) => column);
+
+  GeneratedColumn<int> get totalSets =>
+      $composableBuilder(column: $table.totalSets, builder: (column) => column);
+}
+
+class $$ExerciseProgressCachesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ExerciseProgressCachesTable,
+          ExerciseProgressCache,
+          $$ExerciseProgressCachesTableFilterComposer,
+          $$ExerciseProgressCachesTableOrderingComposer,
+          $$ExerciseProgressCachesTableAnnotationComposer,
+          $$ExerciseProgressCachesTableCreateCompanionBuilder,
+          $$ExerciseProgressCachesTableUpdateCompanionBuilder,
+          (
+            ExerciseProgressCache,
+            BaseReferences<
+              _$AppDatabase,
+              $ExerciseProgressCachesTable,
+              ExerciseProgressCache
+            >,
+          ),
+          ExerciseProgressCache,
+          PrefetchHooks Function()
+        > {
+  $$ExerciseProgressCachesTableTableManager(
+    _$AppDatabase db,
+    $ExerciseProgressCachesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ExerciseProgressCachesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$ExerciseProgressCachesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$ExerciseProgressCachesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> exerciseName = const Value.absent(),
+                Value<DateTime> lastTrainedDate = const Value.absent(),
+                Value<double> topWeight = const Value.absent(),
+                Value<int> topReps = const Value.absent(),
+                Value<int> totalSets = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ExerciseProgressCachesCompanion(
+                userId: userId,
+                exerciseName: exerciseName,
+                lastTrainedDate: lastTrainedDate,
+                topWeight: topWeight,
+                topReps: topReps,
+                totalSets: totalSets,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String exerciseName,
+                required DateTime lastTrainedDate,
+                required double topWeight,
+                required int topReps,
+                required int totalSets,
+                Value<int> rowid = const Value.absent(),
+              }) => ExerciseProgressCachesCompanion.insert(
+                userId: userId,
+                exerciseName: exerciseName,
+                lastTrainedDate: lastTrainedDate,
+                topWeight: topWeight,
+                topReps: topReps,
+                totalSets: totalSets,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<
+                    $ExerciseProgressCachesTable,
+                    ExerciseProgressCache
+                  >(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $ExerciseProgressCachesTable,
+                    ExerciseProgressCache
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ExerciseProgressCachesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ExerciseProgressCachesTable,
+      ExerciseProgressCache,
+      $$ExerciseProgressCachesTableFilterComposer,
+      $$ExerciseProgressCachesTableOrderingComposer,
+      $$ExerciseProgressCachesTableAnnotationComposer,
+      $$ExerciseProgressCachesTableCreateCompanionBuilder,
+      $$ExerciseProgressCachesTableUpdateCompanionBuilder,
+      (
+        ExerciseProgressCache,
+        BaseReferences<
+          _$AppDatabase,
+          $ExerciseProgressCachesTable,
+          ExerciseProgressCache
+        >,
+      ),
+      ExerciseProgressCache,
+      PrefetchHooks Function()
+    >;
+typedef $$AiSuggestionCachesTableCreateCompanionBuilder =
+    AiSuggestionCachesCompanion Function({
+      required String cacheKey,
+      required String jsonData,
+      required DateTime createdAt,
+      Value<int> rowid,
+    });
+typedef $$AiSuggestionCachesTableUpdateCompanionBuilder =
+    AiSuggestionCachesCompanion Function({
+      Value<String> cacheKey,
+      Value<String> jsonData,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$AiSuggestionCachesTableFilterComposer
+    extends Composer<_$AppDatabase, $AiSuggestionCachesTable> {
+  $$AiSuggestionCachesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get cacheKey => $composableBuilder(
+    column: $table.cacheKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get jsonData => $composableBuilder(
+    column: $table.jsonData,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AiSuggestionCachesTableOrderingComposer
+    extends Composer<_$AppDatabase, $AiSuggestionCachesTable> {
+  $$AiSuggestionCachesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get cacheKey => $composableBuilder(
+    column: $table.cacheKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get jsonData => $composableBuilder(
+    column: $table.jsonData,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AiSuggestionCachesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $AiSuggestionCachesTable> {
+  $$AiSuggestionCachesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get cacheKey =>
+      $composableBuilder(column: $table.cacheKey, builder: (column) => column);
+
+  GeneratedColumn<String> get jsonData =>
+      $composableBuilder(column: $table.jsonData, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$AiSuggestionCachesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $AiSuggestionCachesTable,
+          AiSuggestionCache,
+          $$AiSuggestionCachesTableFilterComposer,
+          $$AiSuggestionCachesTableOrderingComposer,
+          $$AiSuggestionCachesTableAnnotationComposer,
+          $$AiSuggestionCachesTableCreateCompanionBuilder,
+          $$AiSuggestionCachesTableUpdateCompanionBuilder,
+          (
+            AiSuggestionCache,
+            BaseReferences<
+              _$AppDatabase,
+              $AiSuggestionCachesTable,
+              AiSuggestionCache
+            >,
+          ),
+          AiSuggestionCache,
+          PrefetchHooks Function()
+        > {
+  $$AiSuggestionCachesTableTableManager(
+    _$AppDatabase db,
+    $AiSuggestionCachesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AiSuggestionCachesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AiSuggestionCachesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AiSuggestionCachesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> cacheKey = const Value.absent(),
+                Value<String> jsonData = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AiSuggestionCachesCompanion(
+                cacheKey: cacheKey,
+                jsonData: jsonData,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String cacheKey,
+                required String jsonData,
+                required DateTime createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => AiSuggestionCachesCompanion.insert(
+                cacheKey: cacheKey,
+                jsonData: jsonData,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$AiSuggestionCachesTable, AiSuggestionCache>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $AiSuggestionCachesTable,
+                    AiSuggestionCache
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AiSuggestionCachesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $AiSuggestionCachesTable,
+      AiSuggestionCache,
+      $$AiSuggestionCachesTableFilterComposer,
+      $$AiSuggestionCachesTableOrderingComposer,
+      $$AiSuggestionCachesTableAnnotationComposer,
+      $$AiSuggestionCachesTableCreateCompanionBuilder,
+      $$AiSuggestionCachesTableUpdateCompanionBuilder,
+      (
+        AiSuggestionCache,
+        BaseReferences<
+          _$AppDatabase,
+          $AiSuggestionCachesTable,
+          AiSuggestionCache
+        >,
+      ),
+      AiSuggestionCache,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -3443,4 +4677,11 @@ class $AppDatabaseManager {
       $$PlannedExercisesTableTableManager(_db, _db.plannedExercises);
   $$LoggedSetsTableTableManager get loggedSets =>
       $$LoggedSetsTableTableManager(_db, _db.loggedSets);
+  $$ExerciseProgressCachesTableTableManager get exerciseProgressCaches =>
+      $$ExerciseProgressCachesTableTableManager(
+        _db,
+        _db.exerciseProgressCaches,
+      );
+  $$AiSuggestionCachesTableTableManager get aiSuggestionCaches =>
+      $$AiSuggestionCachesTableTableManager(_db, _db.aiSuggestionCaches);
 }
