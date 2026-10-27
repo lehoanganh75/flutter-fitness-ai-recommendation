@@ -117,16 +117,19 @@ class AiProxyClient {
         final summary = result['summary'];
         final exercises = result['exercises'];
 
+        // 🆕 Chấp nhận 4-6 bài
         if (summary is! String ||
             summary.trim().isEmpty ||
             exercises is! List ||
-            exercises.length != 3) {
+            exercises.length < 4 ||
+            exercises.length > 6) {
           throw const AiProxyException(
-            'daily_suggestion phải có summary và đúng 3 exercises',
+            'daily_suggestion phải có summary và 4-6 exercises',
           );
         }
 
         final names = <String>{};
+        final knownSet = _knownExerciseNames(input);
 
         for (final exercise in exercises) {
           if (exercise is! Map ||
@@ -140,8 +143,29 @@ class AiProxyClient {
           }
 
           final name = (exercise['name'] as String).trim();
+          final lowerName = name.toLowerCase();
 
-          if (!names.add(name.toLowerCase())) {
+          final sets = exercise['sets'];
+          final reps = exercise['reps'];
+          final weight = exercise['weight'];
+
+          if (sets is! num || sets < 1 || sets > 6) {
+            throw AiProxyException('Sets không hợp lệ cho "$name": $sets');
+          }
+          if (reps is! num || reps < 1 || reps > 30) {
+            throw AiProxyException('Reps không hợp lệ cho "$name": $reps');
+          }
+          if (weight is! num || weight < 0 || weight > 500) {
+            throw AiProxyException('Weight không hợp lệ cho "$name": $weight');
+          }
+
+          if (knownSet.isNotEmpty && !knownSet.contains(lowerName)) {
+            throw AiProxyException(
+              'AI bịa bài tập không có trong thư viện: "$name"',
+            );
+          }
+
+          if (!names.add(lowerName)) {
             throw const AiProxyException(
               'daily_suggestion không được có bài tập trùng tên',
             );
@@ -239,6 +263,16 @@ class AiProxyClient {
         }
         break;
     }
+  }
+
+  Set<String> _knownExerciseNames(Map<String, dynamic> input) {
+    final list = input['known_exercises'];
+    if (list is! List) return const {};
+    return list
+        .whereType<Map>()
+        .map((e) => (e['name'] as String?)?.trim().toLowerCase())
+        .whereType<String>()
+        .toSet();
   }
 
   String _errorDetail(http.Response response) {

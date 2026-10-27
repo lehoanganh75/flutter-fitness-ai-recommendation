@@ -1,300 +1,415 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../app/app_dependencies.dart' show kLocalUserId;
 import '../../domain/models/daily_suggestion.dart';
-import '../../domain/models/today_workout.dart';
 import '../../services/daily_suggestion_service.dart';
 import '../../services/workout_service.dart';
+import '../cubit/home_cubit.dart';
+import '../cubit/home_state.dart';
 
-class HomeScreen extends StatefulWidget {
+// 🆕 Thêm import để mở TodayWorkoutScreen
+import 'today_workout_screen.dart';
+
+// ─────────────────────────────────────────────────────────────
+// COLORS (Đồng bộ với TodayWorkoutScreen)
+// ─────────────────────────────────────────────────────────────
+class _AppColors {
+  static const bg = Color(0xFFF8F9FA); // Nền xám rất nhạt
+  static const surface = Colors.white; // Card trắng
+  static const surfaceHigh = Color(0xFFF1F3F5); // Xám nhạt cho icon bg
+  static const textPrimary = Color(0xFF1F2937); // Chữ đậm
+  static const textSecondary = Color(0xFF6B7280); // Chữ xám
+  static const border = Color(0xFFE5E7EB); // Viền
+  static const accent = Color(0xFF16A34A); // Xanh lá (chủ đạo)
+  static const danger = Color(0xFFDC2626);
+}
+
+class HomeScreen extends StatelessWidget {
   const HomeScreen({
     super.key,
-    this.workout,
     this.workoutService,
     this.dailySuggestionService,
     this.userId = kLocalUserId,
     this.now,
-    this.isLoading = false,
-    this.errorMessage,
     this.onStartWorkout,
     this.onOpenPlan,
     this.refreshToken = 0,
     this.suggestionRefreshToken = 0,
+    this.logSetService,
+    this.weightAdviceService,
   });
 
-  final TodayWorkout? workout;
   final WorkoutService? workoutService;
   final DailySuggestionService? dailySuggestionService;
   final String userId;
   final DateTime? now;
-  final bool isLoading;
-  final String? errorMessage;
   final VoidCallback? onStartWorkout;
   final VoidCallback? onOpenPlan;
   final int refreshToken;
   final int suggestionRefreshToken;
 
+  final dynamic logSetService;
+  final dynamic weightAdviceService;
+
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  Widget build(BuildContext context) {
+    final today = now ?? DateTime.now();
+
+    if (workoutService == null || dailySuggestionService == null) {
+      return const Scaffold(body: Center(child: Text('Chưa cấu hình dịch vụ')));
+    }
+
+    return BlocProvider(
+      create: (context) => HomeCubit(
+        workoutService: workoutService!,
+        suggestionService: dailySuggestionService!,
+        userId: userId,
+      )..loadHomeData(today),
+      child: _HomeView(
+        today: today,
+        onStartWorkout: onStartWorkout,
+        onOpenPlan: onOpenPlan,
+        userId: userId,
+        workoutService: workoutService!,
+        logSetService: logSetService,
+        weightAdviceService: weightAdviceService,
+      ),
+    );
+  }
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  TodayWorkout? _workout;
-  late bool _loading;
-  String? _error;
+class _HomeView extends StatelessWidget {
+  const _HomeView({
+    required this.today,
+    this.onStartWorkout,
+    this.onOpenPlan,
+    required this.userId,
+    required this.workoutService,
+    this.logSetService,
+    this.weightAdviceService,
+  });
 
-  DailySuggestion? _suggestion;
-  bool _suggestionLoading = false;
-  bool _applying = false;
+  final DateTime today;
+  final VoidCallback? onStartWorkout;
+  final VoidCallback? onOpenPlan;
+  final String userId;
+  final WorkoutService workoutService;
+  final dynamic logSetService;
+  final dynamic weightAdviceService;
 
-  DateTime get _today => widget.now ?? DateTime.now();
-
-  @override
-  void initState() {
-    super.initState();
-    _workout = widget.workout;
-    _loading = widget.isLoading;
-    _error = widget.errorMessage;
-    if (_workout == null && widget.workoutService != null && !_loading) {
-      _loadWorkout();
+  void _openWorkout(BuildContext context) {
+    if (onStartWorkout != null) {
+      onStartWorkout!();
+      return;
     }
-    if (widget.dailySuggestionService != null) {
-      _loadSuggestion();
-    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TodayWorkoutScreen(
+          workoutService: workoutService,
+          logSetService: logSetService,
+          weightAdviceService: weightAdviceService,
+          userId: userId,
+          dayOfWeek: today.weekday,
+          onSetLogged: () {
+            context.read<HomeCubit>().loadHomeData(today);
+          },
+        ),
+      ),
+    );
   }
 
-  @override
-  void didUpdateWidget(covariant HomeScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.refreshToken != oldWidget.refreshToken &&
-        widget.workoutService != null) {
-      _loadWorkout(silent: true);
-    }
-    if (widget.suggestionRefreshToken != oldWidget.suggestionRefreshToken &&
-        widget.dailySuggestionService != null) {
-      _loadSuggestion(force: true);
-    }
-  }
-
-  Future<void> _loadSuggestion({bool force = false}) async {
-    final service = widget.dailySuggestionService;
-    if (service == null) return;
-
-    if (_suggestion != null && !force) return;
-
-    setState(() => _suggestionLoading = true);
-    try {
-      final suggestion = await service.suggest(
-        userId: widget.userId,
-        now: _today,
-        forceRefresh: force,
-      );
-      if (mounted) {
-        setState(() {
-          _suggestion = suggestion;
-          _suggestionLoading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Load suggestion failed: $e');
-      if (mounted) setState(() => _suggestionLoading = false);
-    }
-  }
-
-  Future<void> _loadWorkout({bool silent = false}) async {
-    final service = widget.workoutService;
-    if (service == null) return;
-
-    if (!silent) {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
-    }
-
-    try {
-      final workout = await service.loadTodayWorkout(
-        userId: widget.userId,
-        dayOfWeek: _today.weekday,
-        today: _today,
-      );
-      if (mounted) {
-        setState(() {
-          _workout = workout;
-          _loading = false;
-          _error = null;
-        });
-      }
-    } catch (e) {
-      debugPrint('Load workout failed: $e');
-      if (mounted) {
-        setState(() {
-          _error = 'Không tải được buổi tập hôm nay. Vui lòng thử lại.';
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _applySuggestionToToday() async {
-    final suggestion = _suggestion;
-    final service = widget.workoutService;
-    if (suggestion == null || service == null || _applying) return;
-
-    final confirmed = await showDialog<bool>(
+  void _confirmApply(BuildContext context, DateTime today) {
+    showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Áp dụng gợi ý AI'),
-        content: Text(
-          'Thêm ${suggestion.exercises.length} bài vào plan hôm nay? '
-          'Bài trùng tên sẽ được bỏ qua.',
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(
+          'Áp dụng gợi ý AI?',
+          style: TextStyle(color: _AppColors.textPrimary),
+        ),
+        content: const Text(
+          'Giáo án hiện tại của hôm nay sẽ bị GHI ĐÈ bằng gợi ý AI. '
+          'Các bài tập cũ (kể cả đã tập) sẽ bị xoá khỏi giáo án.',
+          style: TextStyle(color: _AppColors.textSecondary),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text(
+              'Huỷ',
+              style: TextStyle(color: _AppColors.textSecondary),
+            ),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Áp dụng'),
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              context.read<HomeCubit>().applySuggestionToToday(today);
+            },
+            style: FilledButton.styleFrom(backgroundColor: _AppColors.danger),
+            child: const Text('Ghi đè ngay'),
           ),
         ],
       ),
     );
-
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _applying = true);
-
-    try {
-      await service.applySuggestionToToday(
-        userId: widget.userId,
-        exercises: suggestion.exercises,
-        today: _today,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đã áp dụng gợi ý vào plan hôm nay'),
-          backgroundColor: Color(0xFF16A34A),
-        ),
-      );
-      await _loadWorkout(silent: true);
-    } catch (e) {
-      debugPrint('Apply suggestion failed: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Không áp dụng được: $e')));
-    } finally {
-      if (mounted) setState(() => _applying = false);
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Hôm nay')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (widget.dailySuggestionService != null) ...[
-            _SuggestionCard(
-              suggestion: _suggestion,
-              loading: _suggestionLoading,
-              applying: _applying,
-              onRefresh: () => _loadSuggestion(force: true),
-              onApplyToToday: _applySuggestionToToday,
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (_loading)
-            const Center(child: CircularProgressIndicator())
-          else if (_error != null)
-            Card(
+      backgroundColor: _AppColors.bg,
+      appBar: AppBar(
+        title: const Text(
+          'Hôm nay',
+          style: TextStyle(
+            color: _AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        backgroundColor: _AppColors.bg,
+        elevation: 0,
+        centerTitle: false,
+      ),
+      body: BlocConsumer<HomeCubit, HomeState>(
+        listener: (context, state) {
+          if (state is HomeError) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.message),
+                backgroundColor: _AppColors.textPrimary,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        },
+        builder: (context, state) {
+          if (state is HomeLoading) {
+            return const Center(
+              child: CircularProgressIndicator(color: _AppColors.accent),
+            );
+          }
+
+          if (state is HomeError) {
+            return Center(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      _error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
+                      state.message,
+                      style: const TextStyle(color: _AppColors.textPrimary),
                     ),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: _loadWorkout,
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () =>
+                          context.read<HomeCubit>().loadHomeData(today),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _AppColors.accent,
+                        foregroundColor: Colors.white,
+                      ),
                       child: const Text('Thử lại'),
                     ),
                   ],
                 ),
               ),
-            )
-          else if (_workout == null)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
+            );
+          }
+
+          final loadedState = state as HomeLoaded;
+          final suggestion = loadedState.suggestion;
+          final workout = loadedState.workout;
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // 🆕 Card Gợi ý AI
+              _SuggestionCard(
+                suggestion: suggestion,
+                loading: loadedState.isSuggestionLoading,
+                applying: loadedState.isApplying,
+                onRefresh: () =>
+                    context.read<HomeCubit>().refreshSuggestion(today),
+                onApplyToToday: () => _confirmApply(context, today),
+              ),
+              const SizedBox(height: 16),
+
+              // 🆕 Card Buổi tập hôm nay / Ngày nghỉ
+              if (workout == null)
+                _EmptyWorkoutCard(onOpenPlan: onOpenPlan)
+              else
+                _TodayWorkoutCard(
+                  workout: workout,
+                  onStartWorkout: () => _openWorkout(context),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Card Buổi tập hôm nay
+// ═══════════════════════════════════════════════════════════════
+class _TodayWorkoutCard extends StatelessWidget {
+  const _TodayWorkoutCard({
+    required this.workout,
+    required this.onStartWorkout,
+  });
+
+  final dynamic workout;
+  final VoidCallback onStartWorkout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _AppColors.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.fitness_center,
+                  color: _AppColors.accent,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Hôm nay là ngày nghỉ',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Không có buổi tập nào được lên kế hoạch cho hôm nay.',
-                    ),
-                    if (widget.onOpenPlan != null) ...[
-                      const SizedBox(height: 12),
-                      FilledButton.tonal(
-                        onPressed: widget.onOpenPlan,
-                        child: const Text('Tạo hoặc chọn giáo án'),
+                      workout.plan.title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: _AppColors.textPrimary,
                       ),
-                    ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${workout.exercises.length} bài · ${workout.muscleGroups.join(", ")}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: _AppColors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
-            )
-          else
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _workout!.plan.title,
-                      style: Theme.of(context).textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_workout!.exercises.length} bài · '
-                      '${_workout!.muscleGroups.join(", ")}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 12),
-                    if (widget.onStartWorkout != null)
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: widget.onStartWorkout,
-                          icon: const Icon(Icons.fitness_center),
-                          label: const Text('Bắt đầu tập'),
-                        ),
-                      ),
-                  ],
+            ],
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: FilledButton(
+              onPressed: onStartWorkout,
+              style: FilledButton.styleFrom(
+                backgroundColor: _AppColors.accent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
+              ),
+              child: const Text(
+                'Bắt đầu tập',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
             ),
+          ),
         ],
       ),
     );
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Card Ngày nghỉ
+// ═══════════════════════════════════════════════════════════════
+class _EmptyWorkoutCard extends StatelessWidget {
+  const _EmptyWorkoutCard({this.onOpenPlan});
+  final VoidCallback? onOpenPlan;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _AppColors.border),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.bedtime_outlined,
+                color: _AppColors.textSecondary,
+                size: 24,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Hôm nay là ngày nghỉ',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: _AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Không có buổi tập nào được lên kế hoạch cho hôm nay.',
+            style: TextStyle(color: _AppColors.textSecondary),
+          ),
+          if (onOpenPlan != null) ...[
+            const SizedBox(height: 16),
+            OutlinedButton(
+              onPressed: onOpenPlan,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _AppColors.accent,
+                side: const BorderSide(color: _AppColors.accent),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Tạo hoặc chọn giáo án'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Card Gợi ý AI
+// ═══════════════════════════════════════════════════════════════
 class _SuggestionCard extends StatelessWidget {
   const _SuggestionCard({
     required this.suggestion,
@@ -318,148 +433,227 @@ class _SuggestionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final primary = theme.colorScheme.primary;
-    final tint = primary.withValues(alpha: 0.1);
     final s = suggestion;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: tint,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.auto_awesome, size: 20, color: primary),
+    return Container(
+      decoration: BoxDecoration(
+        color: _AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _AppColors.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                child: const Icon(
+                  Icons.auto_awesome,
+                  size: 24,
+                  color: _AppColors.accent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Gợi ý hôm nay',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: _AppColors.textPrimary,
+                      ),
+                    ),
+                    if (s != null)
                       Text(
-                        'Gợi ý hôm nay',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (s != null)
-                        Text(
-                          _label(s.source),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Làm mới',
-                  onPressed: loading ? null : onRefresh,
-                  icon: const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-            if (loading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (s == null)
-              const Padding(
-                padding: EdgeInsets.only(top: 12),
-                child: Text('Chưa có gợi ý.'),
-              )
-            else ...[
-              const SizedBox(height: 12),
-              Text(s.summary, style: theme.textTheme.bodyMedium),
-              const SizedBox(height: 8),
-              const Divider(height: 24),
-              for (var i = 0; i < s.exercises.length; i++)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 24,
-                        height: 24,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: tint,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          '${i + 1}',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: primary,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        _label(s.source),
+                        style: const TextStyle(
+                          color: _AppColors.accent,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              s.exercises[i].name,
-                              style: theme.textTheme.bodyLarge?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${s.exercises[i].sets} hiệp x ${s.exercises[i].reps} lần · ${s.exercises[i].weight.toStringAsFixed(0)} kg',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            if (s.exercises[i].reason.isNotEmpty)
-                              Text(
-                                s.exercises[i].reason,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: (loading || applying) ? null : onApplyToToday,
-                  icon: applying
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.today),
-                  label: Text(
-                    applying ? 'Đang áp dụng...' : 'Áp dụng vào hôm nay',
-                  ),
+              ),
+              IconButton(
+                tooltip: 'Làm mới',
+                onPressed: loading ? null : onRefresh,
+                icon: const Icon(
+                  Icons.refresh,
+                  color: _AppColors.textSecondary,
                 ),
               ),
             ],
+          ),
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: CircularProgressIndicator(color: _AppColors.accent),
+              ),
+            )
+          else if (s == null)
+            const Padding(
+              padding: EdgeInsets.only(top: 16),
+              child: Text(
+                'Chưa có gợi ý.',
+                style: TextStyle(color: _AppColors.textSecondary),
+              ),
+            )
+          else ...[
+            const SizedBox(height: 16),
+            Text(
+              s.summary,
+              style: const TextStyle(
+                color: _AppColors.textPrimary,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 24, color: _AppColors.border),
+            for (var i = 0; i < s.exercises.length; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _AppColors.surfaceHigh,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '${i + 1}',
+                        style: const TextStyle(
+                          color: _AppColors.textSecondary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            s.exercises[i].name,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: _AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${s.exercises[i].sets} hiệp x ${s.exercises[i].reps} lần · ${s.exercises[i].weight.toStringAsFixed(0)} kg',
+                            style: const TextStyle(
+                              color: _AppColors.accent,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          if (s.exercises[i].reason.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              s.exercises[i].reason,
+                              style: const TextStyle(
+                                color: _AppColors.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 16),
+
+            // Cảnh báo Ghi đè
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.orange,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Áp dụng gợi ý này sẽ thay thế toàn bộ bài tập hôm nay.',
+                      style: TextStyle(
+                        color: Colors.orange.shade800,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Nút Áp dụng
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: (loading || applying) ? null : onApplyToToday,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _AppColors.accent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: applying
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.today),
+                label: Text(
+                  applying ? 'Đang áp dụng...' : 'Áp dụng và Ghi đè',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

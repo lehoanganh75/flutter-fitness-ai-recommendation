@@ -4,6 +4,20 @@ import '../../domain/repositories/workout_repository.dart';
 import '../../services/workout_service.dart';
 import 'create_plan_screen.dart';
 
+// ─────────────────────────────────────────────────────────────
+// COLORS (Đồng bộ toàn app)
+// ─────────────────────────────────────────────────────────────
+class _AppColors {
+  static const bg = Color(0xFFF8F9FA);
+  static const surface = Colors.white;
+  static const surfaceHigh = Color(0xFFF1F3F5);
+  static const textPrimary = Color(0xFF1F2937);
+  static const textSecondary = Color(0xFF6B7280);
+  static const border = Color(0xFFE5E7EB);
+  static const accent = Color(0xFF16A34A);
+  static const danger = Color(0xFFDC2626);
+}
+
 typedef PlanLoader = Future<List<WorkoutPlanDetails>> Function(
   String userId,
   int dayOfWeek,
@@ -82,7 +96,7 @@ class _PlanScreenState extends State<PlanScreen> {
 
   Future<void> _navigateToCreatePlan() async {
     if (widget.repository == null) return;
-    
+
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => CreatePlanScreen(
@@ -94,7 +108,7 @@ class _PlanScreenState extends State<PlanScreen> {
     );
 
     if (result == true && mounted) {
-      _loadPlans(); // Reload plans after creating new one
+      _loadPlans();
     }
   }
 
@@ -105,22 +119,28 @@ class _PlanScreenState extends State<PlanScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Xóa kế hoạch?'),
+        backgroundColor: _AppColors.surface,
+        title: const Text(
+          'Xoá giáo án?',
+          style: TextStyle(color: _AppColors.textPrimary),
+        ),
         content: Text(
-          'Bạn có chắc muốn xóa "${details.plan.title}"? '
-          '${details.exercises.length} bài tập sẽ bị xóa theo.',
+          'Bạn có chắc muốn xoá "${details.plan.title}"? '
+          '${details.exercises.length} bài tập sẽ bị xoá theo.',
+          style: const TextStyle(color: _AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Hủy'),
+            child: const Text(
+              'Huỷ',
+              style: TextStyle(color: _AppColors.textSecondary),
+            ),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: _AppColors.danger),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Xóa'),
+            child: const Text('Xoá'),
           ),
         ],
       ),
@@ -131,23 +151,42 @@ class _PlanScreenState extends State<PlanScreen> {
     try {
       await repository.deletePlan(details.plan.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Đã xóa "${details.plan.title}"')),
-      );
+      _showSnack('Đã xoá "${details.plan.title}"');
       await _loadPlans();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Xóa thất bại: $error')),
-      );
+      _showSnack('Xoá thất bại: $error');
     }
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: _AppColors.textPrimary,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Giáo án')),
+      backgroundColor: _AppColors.bg,
+      appBar: AppBar(
+        backgroundColor: _AppColors.bg,
+        elevation: 0,
+        centerTitle: false,
+        title: const Text(
+          'Giáo án',
+          style: TextStyle(
+            color: _AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
       body: RefreshIndicator(
+        color: _AppColors.accent,
         onRefresh: (widget.planLoader != null || widget.workoutService != null)
             ? _loadPlans
             : () async {},
@@ -159,7 +198,9 @@ class _PlanScreenState extends State<PlanScreen> {
             if (_loading)
               const Padding(
                 padding: EdgeInsets.only(top: 48),
-                child: Center(child: CircularProgressIndicator()),
+                child: Center(
+                  child: CircularProgressIndicator(color: _AppColors.accent),
+                ),
               )
             else if (_error != null)
               _StateMessage(
@@ -189,21 +230,30 @@ class _PlanScreenState extends State<PlanScreen> {
       floatingActionButton: widget.repository != null
           ? FloatingActionButton.extended(
               onPressed: _navigateToCreatePlan,
+              backgroundColor: _AppColors.accent,
+              foregroundColor: Colors.white,
+              elevation: 2,
               icon: const Icon(Icons.add),
-              label: const Text('Kế hoạch mới'),
+              label: const Text(
+                'Kế hoạch mới',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             )
           : null,
     );
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Day selector (dạng pill/chip)
+// ═══════════════════════════════════════════════════════════════
 class _DaySelector extends StatelessWidget {
   const _DaySelector({required this.selectedDay, required this.onSelected});
 
   final int selectedDay;
   final ValueChanged<int> onSelected;
 
-  static const _labels = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
+  static const _labels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
   @override
   Widget build(BuildContext context) {
@@ -218,18 +268,27 @@ class _DaySelector extends StatelessWidget {
               button: true,
               selected: selected,
               label: '${_labels[index]}${selected ? ', selected' : ''}',
-              child: SizedBox(
-                height: 48,
-                child: OutlinedButton(
-                  onPressed: () => onSelected(day),
-                  style: OutlinedButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    backgroundColor: selected
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
-                    foregroundColor: selected ? Colors.white : null,
+              child: GestureDetector(
+                onTap: () => onSelected(day),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: selected ? _AppColors.accent : _AppColors.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: selected ? _AppColors.accent : _AppColors.border,
+                    ),
                   ),
-                  child: Text(_labels[index]),
+                  child: Text(
+                    _labels[index],
+                    style: TextStyle(
+                      color: selected ? Colors.white : _AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -240,6 +299,9 @@ class _DaySelector extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Plan Card
+// ═══════════════════════════════════════════════════════════════
 class _PlanCard extends StatelessWidget {
   const _PlanCard({required this.details, this.onDelete});
 
@@ -248,48 +310,110 @@ class _PlanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    details.plan.title,
-                    style: Theme.of(context).textTheme.titleLarge,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  details.plan.title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: _AppColors.textPrimary,
                   ),
-                ),
-                if (onDelete != null)
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    color: Theme.of(context).colorScheme.error,
-                    tooltip: 'Xóa kế hoạch',
-                    onPressed: onDelete,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (details.exercises.isEmpty)
-              const Text('Không có bài tập trong kế hoạch này.')
-            else
-              ...details.exercises.map(
-                (exercise) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(exercise.exercise),
-                  subtitle: Text(
-                    '${exercise.muscleGroup} · ${exercise.targetSets} tập ×'
-                    '${exercise.targetReps} lần · '
-                    '${_weightLabel(exercise.initialWeight)} kg',
-                  ),
-                  leading: CircleAvatar(child: Text('${exercise.sortOrder}')),
                 ),
               ),
-          ],
-        ),
+              if (onDelete != null)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  color: _AppColors.danger,
+                  tooltip: 'Xoá giáo án',
+                  onPressed: onDelete,
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (details.exercises.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Không có bài tập trong kế hoạch này.',
+                style: TextStyle(color: _AppColors.textSecondary),
+              ),
+            )
+          else
+            ...details.exercises.map(
+              (exercise) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _AppColors.accent.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '${exercise.sortOrder}',
+                        style: const TextStyle(
+                          color: _AppColors.accent,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            exercise.exercise,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: _AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${exercise.muscleGroup} · '
+                            '${exercise.targetSets} set × '
+                            '${exercise.targetReps} lần · '
+                            '${_weightLabel(exercise.initialWeight)} kg',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: _AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -301,6 +425,9 @@ class _PlanCard extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Empty / Error state
+// ═══════════════════════════════════════════════════════════════
 class _StateMessage extends StatelessWidget {
   const _StateMessage({
     required this.icon,
@@ -317,23 +444,49 @@ class _StateMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 48),
-      child: Center(
+      padding: const EdgeInsets.only(top: 24),
+      child: Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: _AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _AppColors.border),
+        ),
         child: Column(
           children: [
-            Icon(icon, size: 48, semanticLabel: title),
+            Icon(
+              icon,
+              size: 48,
+              color: _AppColors.textSecondary,
+              semanticLabel: title,
+            ),
             const SizedBox(height: 16),
-            Text(title, style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: _AppColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text(message, textAlign: TextAlign.center),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: _AppColors.textSecondary),
+            ),
             if (action != null) ...[
               const SizedBox(height: 16),
-              SizedBox(
-                height: 48,
-                child: FilledButton(
-                  onPressed: action,
-                  child: const Text('Thử lại'),
+              FilledButton(
+                onPressed: action,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _AppColors.accent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
+                child: const Text('Thử lại'),
               ),
             ],
           ],

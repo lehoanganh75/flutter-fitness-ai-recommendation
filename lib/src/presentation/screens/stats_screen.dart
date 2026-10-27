@@ -1,5 +1,20 @@
 ﻿import 'package:flutter/material.dart';
+
 import '../../services/stats_service.dart';
+
+// ─────────────────────────────────────────────────────────────
+// COLORS (Đồng bộ toàn app)
+// ─────────────────────────────────────────────────────────────
+class _AppColors {
+  static const bg = Color(0xFFF8F9FA);
+  static const surface = Colors.white;
+  static const surfaceHigh = Color(0xFFF1F3F5);
+  static const textPrimary = Color(0xFF1F2937);
+  static const textSecondary = Color(0xFF6B7280);
+  static const border = Color(0xFFE5E7EB);
+  static const accent = Color(0xFF16A34A);
+  static const danger = Color(0xFFDC2626);
+}
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({
@@ -35,7 +50,7 @@ class _StatsScreenState extends State<StatsScreen> {
     }
 
     setState(() => _loading = true);
-    
+
     try {
       final stats = await widget.statsService!.getStats(widget.userId);
       if (mounted) {
@@ -58,41 +73,73 @@ class _StatsScreenState extends State<StatsScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
+        backgroundColor: _AppColors.bg,
         appBar: AppBar(
-          title: const Text('Tiến độ'),
+          backgroundColor: _AppColors.bg,
+          elevation: 0,
+          title: const Text(
+            'Tiến độ',
+            style: TextStyle(
+              color: _AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ),
-        body: const Center(child: CircularProgressIndicator()),
+        body: const Center(
+          child: CircularProgressIndicator(color: _AppColors.accent),
+        ),
       );
     }
 
     if (_stats == null || _stats!.totalWorkouts == 0) {
       return Scaffold(
+        backgroundColor: _AppColors.bg,
         appBar: AppBar(
-          title: const Text('Tiến độ'),
+          backgroundColor: _AppColors.bg,
+          elevation: 0,
+          title: const Text(
+            'Tiến độ',
+            style: TextStyle(
+              color: _AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.insights_outlined,
-                  size: 64,
-                  color: Colors.grey[400],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Chưa có dữ liệu tập luyện',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Hoàn thành một số bài tập để xem thống kê tại đây',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-              ],
+            child: Container(
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: _AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _AppColors.border),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.insights_outlined,
+                    size: 56,
+                    color: _AppColors.textSecondary,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Chưa có dữ liệu tập luyện',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: _AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Hoàn thành một số bài tập để xem thống kê tại đây',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: _AppColors.textSecondary),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -100,24 +147,35 @@ class _StatsScreenState extends State<StatsScreen> {
     }
 
     final stats = _stats!;
-    
+
     return Scaffold(
+      backgroundColor: _AppColors.bg,
       appBar: AppBar(
-        title: const Text('Tiến độ'),
+        backgroundColor: _AppColors.bg,
+        elevation: 0,
+        centerTitle: false,
+        title: const Text(
+          'Tiến độ',
+          style: TextStyle(
+            color: _AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.calendar_today_outlined),
+            icon: const Icon(
+              Icons.calendar_today_outlined,
+              color: _AppColors.textPrimary,
+            ),
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Bộ chọn khoảng ngày - sắp ra mắt')),
-              );
+              _showSnack('Bộ chọn khoảng ngày - sắp ra mắt');
             },
             tooltip: 'Chọn khoảng ngày',
           ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
         children: [
           // Summary Cards
           Row(
@@ -149,10 +207,10 @@ class _StatsScreenState extends State<StatsScreen> {
               Expanded(
                 child: _StatCard(
                   icon: Icons.timer_outlined,
-                  title: 'Total Time',
+                  title: 'Tổng thời gian',
                   value: '${(stats.totalTime / 60).toStringAsFixed(0)}h',
                   subtitle: 'Tháng này',
-                  color: Colors.green,
+                  color: _AppColors.accent,
                 ),
               ),
               const SizedBox(width: 12),
@@ -167,78 +225,57 @@ class _StatsScreenState extends State<StatsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
           // Weekly Activity Chart
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Hoạt động hàng tuần',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const SizedBox(height: 16),
-                  _WeeklyChart(data: stats.weeklyActivity),
-                ],
-              ),
-            ),
+          _SectionCard(
+            title: 'Hoạt động hàng tuần',
+            child: _WeeklyChart(data: stats.weeklyActivity),
           ),
           const SizedBox(height: 16),
 
           // Personal Records
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Kỷ lục cá nhân',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Xem tất cả kỷ lục - sắp ra mắt')),
-                          );
-                        },
-                        child: const Text('Xem tất cả'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (stats.personalRecords.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text(
-                        'Hoàn thành tập luyện để đặt kỷ lục cá nhân',
-                        textAlign: TextAlign.center,
-                      ),
-                    )
-                  else
-                    ...stats.personalRecords.asMap().entries.map((entry) {
+          _SectionCard(
+            title: 'Kỷ lục cá nhân',
+            action: TextButton(
+              onPressed: () => _showSnack('Xem tất cả kỷ lục - sắp ra mắt'),
+              child: const Text(
+                'Xem tất cả',
+                style: TextStyle(
+                  color: _AppColors.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            child: stats.personalRecords.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'Hoàn thành tập luyện để đặt kỷ lục cá nhân',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: _AppColors.textSecondary),
+                    ),
+                  )
+                : Column(
+                    children: stats.personalRecords.asMap().entries.map((
+                      entry,
+                    ) {
                       final index = entry.key;
                       final pr = entry.value;
                       final icons = [
                         Icons.emoji_events,
                         Icons.star,
-                        Icons.military_tech
+                        Icons.military_tech,
                       ];
-                      final colors = [Colors.amber, Colors.blue, Colors.green];
-                      
+                      final colors = [
+                        Colors.amber,
+                        Colors.blue,
+                        _AppColors.accent,
+                      ];
                       return Column(
                         children: [
-                          if (index > 0) const Divider(height: 24),
+                          if (index > 0)
+                            const Divider(height: 24, color: _AppColors.border),
                           _PersonalRecordTile(
                             exercise: pr.exercise,
                             weight: '${pr.weight.toStringAsFixed(1)} kg',
@@ -249,57 +286,40 @@ class _StatsScreenState extends State<StatsScreen> {
                           ),
                         ],
                       );
-                    }),
-                ],
-              ),
-            ),
+                    }).toList(),
+                  ),
           ),
           const SizedBox(height: 16),
 
           // Muscle Group Distribution
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Nhóm cơ',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '30 ngày qua',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (stats.muscleGroupDistribution.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text(
-                        'Hoàn thành tập luyện để xem phân phối nhóm cơ',
-                        textAlign: TextAlign.center,
-                      ),
-                    )
-                  else
-                    ...stats.muscleGroupDistribution.entries.map((entry) {
+          _SectionCard(
+            title: 'Nhóm cơ',
+            subtitle: '30 ngày qua',
+            child: stats.muscleGroupDistribution.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'Hoàn thành tập luyện để xem phân phối nhóm cơ',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: _AppColors.textSecondary),
+                    ),
+                  )
+                : Column(
+                    children: stats.muscleGroupDistribution.entries.map((
+                      entry,
+                    ) {
                       final colors = {
                         'Chest': Colors.red,
                         'Back': Colors.blue,
-                        'Legs': Colors.green,
-                        'Quads': Colors.green,
-                        'Hamstrings': Colors.green,
+                        'Legs': _AppColors.accent,
+                        'Quads': _AppColors.accent,
+                        'Hamstrings': _AppColors.accent,
                         'Shoulders': Colors.orange,
                         'Arms': Colors.purple,
                         'Triceps': Colors.purple,
                         'Biceps': Colors.purple,
                         'Core': Colors.amber,
                       };
-                      
                       return Column(
                         children: [
                           _MuscleGroupBar(
@@ -310,13 +330,20 @@ class _StatsScreenState extends State<StatsScreen> {
                           const SizedBox(height: 12),
                         ],
                       );
-                    }),
-                ],
-              ),
-            ),
+                    }).toList(),
+                  ),
           ),
-          const SizedBox(height: 100),
         ],
+      ),
+    );
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: _AppColors.textPrimary,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -324,7 +351,7 @@ class _StatsScreenState extends State<StatsScreen> {
   String _formatDate(DateTime date) {
     final now = DateTime.now();
     final diff = now.difference(date).inDays;
-    
+
     if (diff == 0) return 'Hôm nay';
     if (diff == 1) return 'Hôm qua';
     if (diff < 7) return '$diff ngày trước';
@@ -333,6 +360,9 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Stat Card
+// ═══════════════════════════════════════════════════════════════
 class _StatCard extends StatelessWidget {
   const _StatCard({
     required this.icon,
@@ -350,55 +380,156 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
             ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: _AppColors.textPrimary,
             ),
-            Text(
-              subtitle,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey[600],
-                  ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: _AppColors.textPrimary,
             ),
-          ],
-        ),
+          ),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              fontSize: 12,
+              color: _AppColors.textSecondary,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Section Card (Container chuẩn)
+// ═══════════════════════════════════════════════════════════════
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.title,
+    required this.child,
+    this.subtitle,
+    this.action,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget child;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: _AppColors.textPrimary,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: _AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (action != null) action!,
+            ],
+          ),
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Weekly Chart
+// ═══════════════════════════════════════════════════════════════
 class _WeeklyChart extends StatelessWidget {
   const _WeeklyChart({required this.data});
 
   final List<double> data;
-  
+
   @override
   Widget build(BuildContext context) {
-    final labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final labels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
     return SizedBox(
-      height: 200,
+      height: 180,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: List.generate(7, (index) {
           final isToday = index == DateTime.now().weekday - 1;
+          // Giới hạn chiều cao tối thiểu 4px để tránh cột bị ẩn
+          final height = (140 * data[index]).clamp(4.0, 140.0);
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -406,12 +537,12 @@ class _WeeklyChart extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Container(
-                    height: 150 * data[index],
+                    height: height,
                     decoration: BoxDecoration(
                       color: isToday
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(8),
+                          ? _AppColors.accent
+                          : _AppColors.accent.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -419,7 +550,8 @@ class _WeeklyChart extends StatelessWidget {
                     labels[index],
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                      color: _AppColors.textSecondary,
+                      fontWeight: isToday ? FontWeight.w700 : FontWeight.normal,
                     ),
                   ),
                 ],
@@ -432,6 +564,9 @@ class _WeeklyChart extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Personal Record Tile
+// ═══════════════════════════════════════════════════════════════
 class _PersonalRecordTile extends StatelessWidget {
   const _PersonalRecordTile({
     required this.exercise,
@@ -457,9 +592,9 @@ class _PersonalRecordTile extends StatelessWidget {
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, color: color, size: 24),
+          child: Icon(icon, color: color, size: 22),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -469,16 +604,17 @@ class _PersonalRecordTile extends StatelessWidget {
               Text(
                 exercise,
                 style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  color: _AppColors.textPrimary,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 '$weight × $reps',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 14,
+                style: const TextStyle(
+                  color: _AppColors.textSecondary,
+                  fontSize: 13,
                 ),
               ),
             ],
@@ -486,16 +622,16 @@ class _PersonalRecordTile extends StatelessWidget {
         ),
         Text(
           date,
-          style: TextStyle(
-            color: Colors.grey[500],
-            fontSize: 12,
-          ),
+          style: const TextStyle(color: _AppColors.textSecondary, fontSize: 12),
         ),
       ],
     );
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Muscle Group Bar
+// ═══════════════════════════════════════════════════════════════
 class _MuscleGroupBar extends StatelessWidget {
   const _MuscleGroupBar({
     required this.label,
@@ -519,25 +655,26 @@ class _MuscleGroupBar extends StatelessWidget {
               label,
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontSize: 13,
+                color: _AppColors.textPrimary,
               ),
             ),
             Text(
               '${(percentage * 100).toInt()}%',
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 14,
+              style: const TextStyle(
+                color: _AppColors.textSecondary,
+                fontSize: 13,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         ClipRRect(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(6),
           child: LinearProgressIndicator(
             value: percentage,
             minHeight: 8,
-            backgroundColor: Colors.grey[200],
+            backgroundColor: _AppColors.surfaceHigh,
             valueColor: AlwaysStoppedAnimation<Color>(color),
           ),
         ),

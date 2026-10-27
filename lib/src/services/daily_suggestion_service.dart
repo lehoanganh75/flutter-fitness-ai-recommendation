@@ -77,41 +77,29 @@ class DailySuggestionService {
       if (dbCache != null) {
         try {
           final decoded = jsonDecode(dbCache) as Map<String, dynamic>;
-          final suggestion = DailySuggestion(
-            source: SuggestionSource.ai,
-            summary: decoded['summary'] as String? ?? '',
-            exercises: (decoded['exercises'] as List).map((e) {
-              final map = e as Map<String, dynamic>;
-              return SuggestedExercise(
-                name: map['name'] as String,
-                reason: map['reason'] as String? ?? '',
-                sets: (map['sets'] as num?)?.toInt() ?? 3,
-                reps: (map['reps'] as num?)?.toInt() ?? 10,
-                weight: (map['weight'] as num?)?.toDouble() ?? 20.0,
-              );
-            }).toList(),
-          );
+          final suggestion = _decodeSuggestion(decoded);
           _aiCache[key] = suggestion;
           return suggestion;
         } catch (e) {
-          debugPrint('Lỗi đọc Cache SQLite: $e');
+          debugPrint('[Cache] Lỗi đọc SQLite: $e');
         }
       }
     }
 
     final sessions = await _loadRecent(userId, historyDays);
-    if (sessions.isEmpty) return _warmUpSuggestion();
-
     final known = await _loadKnown(userId);
-    if (known.isEmpty) return _warmUpSuggestion();
+
+    if (sessions.isEmpty || known.isEmpty) {
+      return _warmUpSuggestion();
+    }
 
     final proxy = _proxy;
     if (proxy != null) {
       if (forceRefresh && _lastAiRequest != null) {
         final diff = DateTime.now().difference(_lastAiRequest!);
         if (diff < _cooldownDuration) {
-          debugPrint('AI cooldown: chưa đủ 2 phút, dùng local.');
-          return _fromHistory(sessions, known);
+          debugPrint('[AI] Cooldown, dùng history');
+          return _safeHistoryFallback(sessions, known);
         }
       }
 
@@ -124,16 +112,33 @@ class DailySuggestionService {
           sessions,
           known,
         ).timeout(aiTimeout);
-        if (ai != null) {
+        if (ai != null && ai.exercises.isNotEmpty) {
           _aiCache[key] = ai;
           return ai;
         }
       } catch (e) {
-        debugPrint('AI suggestion failed (rate limit?): $e');
+        debugPrint('[AI] Lỗi: $e → fallback history');
       }
     }
 
-    return _fromHistory(sessions, known);
+    return _safeHistoryFallback(sessions, known);
+  }
+
+  DailySuggestion _decodeSuggestion(Map<String, dynamic> decoded) {
+    return DailySuggestion(
+      source: SuggestionSource.ai,
+      summary: decoded['summary'] as String? ?? '',
+      exercises: (decoded['exercises'] as List).map((e) {
+        final map = e as Map<String, dynamic>;
+        return SuggestedExercise(
+          name: map['name'] as String,
+          reason: map['reason'] as String? ?? '',
+          sets: (map['sets'] as num?)?.toInt() ?? 3,
+          reps: (map['reps'] as num?)?.toInt() ?? 10,
+          weight: (map['weight'] as num?)?.toDouble() ?? 20.0,
+        );
+      }).toList(),
+    );
   }
 
   DailySuggestion _warmUpSuggestion() => const DailySuggestion(
@@ -142,6 +147,19 @@ class DailySuggestionService {
         'Chưa có buổi tập gần đây. Hãy bắt đầu bằng các bài khởi động nhẹ.',
     exercises: _warmUp,
   );
+
+  DailySuggestion _safeHistoryFallback(
+    List<RecentSession> sessions,
+    List<KnownExercise> known,
+  ) {
+    try {
+      final history = _fromHistory(sessions, known);
+      if (history.exercises.isNotEmpty) return history;
+    } catch (e) {
+      debugPrint('[History] Lỗi: $e');
+    }
+    return _warmUpSuggestion();
+  }
 
   Future<DailySuggestion?> _fromAi(
     AiProxyClient proxy,
@@ -153,6 +171,9 @@ class DailySuggestionService {
     final input = <String, dynamic>{
       'today': _isoDate(now),
       'weekday': now.weekday,
+      'instruction':
+          'Gợi ý 4-6 bài tập. Đa dạng nhóm cơ. '
+          'Mỗi bài: name, reason, sets (3-4), reps (8-12), weight (kg).',
       'recent_sessions': [
         for (final s in sessions.take(30))
           {
@@ -188,56 +209,51 @@ class DailySuggestionService {
 
     final byName = {for (final e in known) e.name.trim().toLowerCase(): e};
     final out = <SuggestedExercise>[];
+
     for (final item in list) {
       if (item is! Map) continue;
       final name = item['name'];
       if (name is! String) continue;
-      final match = byName[name.trim().toLowerCase()];
-      if (match == null || out.any((e) => e.name == match.name)) continue;
 
-      final reason = item['reason'];
+      final match = byName[name.trim().toLowerCase()];
+      if (match == null) {
+        debugPrint('⚠️ AI bịa bài "$name" - không có trong known_exercises');
+        continue;
+      }
+      if (out.any((e) => e.name == match.name)) continue;
 
       int finalSets = 3;
       int finalReps = 10;
       double finalWeight = 20.0;
 
-      final history = sessions
-          .where((s) => s.exercise.toLowerCase() == match.name.toLowerCase())
-          .toList();
+      if (item['sets'] is num) {
+        final s = (item['sets'] as num).toInt();
+        if (s >= 1 && s <= 6) finalSets = s;
+      }
+      if (item['reps'] is num) {
+        final r = (item['reps'] as num).toInt();
+        if (r >= 1 && r <= 30) finalReps = r;
+      }
+      if (item['weight'] is num) {
+        final w = (item['weight'] as num).toDouble();
+        if (w >= 0 && w <= 500) finalWeight = w;
+      }
 
-      if (history.isNotEmpty) {
-        finalReps = history.first.reps ?? 10;
-        finalWeight = history.first.topWeight ?? 20.0;
-      } else {
-        final mg = match.muscleGroup.toLowerCase();
-        if (mg.contains('leg') ||
-            mg.contains('chân') ||
-            mg.contains('squat') ||
-            mg.contains('đùi')) {
-          finalWeight = 40.0;
-        } else if (mg.contains('back') ||
-            mg.contains('lưng') ||
-            mg.contains('xô') ||
-            mg.contains('row') ||
-            mg.contains('deadlift')) {
-          finalWeight = 30.0;
-        } else if (mg.contains('bicep') ||
-            mg.contains('tay') ||
-            mg.contains('forearm') ||
-            mg.contains('curl')) {
-          finalWeight = 10.0;
+      if (item['sets'] == null ||
+          item['reps'] == null ||
+          item['weight'] == null) {
+        final history = sessions
+            .where((s) => s.exercise.toLowerCase() == match.name.toLowerCase())
+            .toList();
+        if (history.isNotEmpty) {
+          finalReps = history.first.reps ?? finalReps;
+          finalWeight = history.first.topWeight ?? finalWeight;
+        } else {
+          finalWeight = _getDefaultWeight(match.muscleGroup);
         }
       }
 
-      if (item['sets'] is num && (item['sets'] as num) > 0) {
-        finalSets = (item['sets'] as num).toInt();
-      }
-      if (item['reps'] is num && (item['reps'] as num) > 0) {
-        finalReps = (item['reps'] as num).toInt();
-      }
-      if (item['weight'] is num && (item['weight'] as num) > 0) {
-        finalWeight = (item['weight'] as num).toDouble();
-      }
+      final reason = item['reason'];
 
       out.add(
         SuggestedExercise(
@@ -248,9 +264,13 @@ class DailySuggestionService {
           weight: finalWeight,
         ),
       );
-      if (out.length == 5) break;
+      if (out.length >= 6) break;
     }
-    if (out.isEmpty) return null;
+
+    if (out.length < 3) {
+      debugPrint('⚠️ AI chỉ trả ${out.length} bài hợp lệ, fallback');
+      return null;
+    }
 
     final summary = json['summary'];
     final summaryText = summary is String && summary.trim().isNotEmpty
@@ -288,14 +308,10 @@ class DailySuggestionService {
     List<RecentSession> sessions,
   ) async {
     final retrieval = _retrieval;
-
-    if (retrieval == null) {
-      return '(không có)';
-    }
+    if (retrieval == null) return '(không có)';
 
     try {
       final lines = <String>{};
-
       final exerciseNames = sessions
           .map((s) => s.exercise.trim())
           .where((name) => name.isNotEmpty)
@@ -307,7 +323,6 @@ class DailySuggestionService {
           userId: userId,
           exercise: name,
         );
-
         for (final memory in memories) {
           final content = memory.content.trim();
           if (content.isEmpty) continue;
@@ -358,7 +373,7 @@ class DailySuggestionService {
           ? 'Nhóm $target chưa được tập trong $historyDays ngày qua.'
           : 'Nhóm $target đã nghỉ lâu nhất trong $historyDays ngày qua.',
       exercises: [
-        for (final e in groups[target]!.take(4))
+        for (final e in groups[target]!.take(5))
           SuggestedExercise(name: e.name, reason: 'Nhóm cơ: $target'),
       ],
     );
@@ -370,4 +385,26 @@ class DailySuggestionService {
     final t = s.trim();
     return t.length <= max ? t : t.substring(0, max);
   }
+}
+
+double _getDefaultWeight(String muscleGroup) {
+  final mg = muscleGroup.toLowerCase();
+  if (mg.contains('leg') ||
+      mg.contains('chân') ||
+      mg.contains('squat') ||
+      mg.contains('đùi')) {
+    return 40.0;
+  } else if (mg.contains('back') ||
+      mg.contains('lưng') ||
+      mg.contains('xô') ||
+      mg.contains('row') ||
+      mg.contains('deadlift')) {
+    return 30.0;
+  } else if (mg.contains('bicep') ||
+      mg.contains('tay') ||
+      mg.contains('forearm') ||
+      mg.contains('curl')) {
+    return 10.0;
+  }
+  return 20.0;
 }

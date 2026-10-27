@@ -1,5 +1,6 @@
 import 'package:fitness_recommendation/src/services/weight_advice_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/app_dependencies.dart' show kLocalUserId;
 import '../../domain/repositories/workout_repository.dart';
@@ -12,6 +13,14 @@ import 'today_workout_screen.dart';
 import 'plan_screen.dart';
 import 'stats_screen.dart';
 import 'exercises_screen.dart';
+
+// Đồng bộ màu với HomeScreen & TodayWorkoutScreen
+class _AppColors {
+  static const bg = Color(0xFFF8F9FA);
+  static const surface = Colors.white;
+  static const textPrimary = Color(0xFF1F2937);
+  static const accent = Color(0xFF16A34A);
+}
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -43,20 +52,10 @@ class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
   bool _showTodayWorkout = false;
 
-  /// Đổi key để màn tập được dựng lại và tải dữ liệu mới mỗi lần bấm "Bắt đầu tập"
-  /// (vd: vừa tạo giáo án xong thì màn tập phải thấy giáo án đó).
   int _workoutKey = 0;
-
-  /// Tăng để Trang chủ tải lại buổi tập hôm nay (rẻ, chỉ đọc DB cục bộ).
   int _homeRefresh = 0;
-
-  /// Tăng để AI tạo lại gợi ý. Chỉ tăng khi có set mới, để không tốn request.
   int _suggestionRefresh = 0;
-
-  /// Đổi key để tab Tiến độ tính lại số liệu.
   int _statsVersion = 0;
-
-  /// True nếu người dùng vừa ghi set mới kể từ lần làm mới trước.
   bool _hasNewLoggedSets = false;
 
   @override
@@ -88,9 +87,24 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Đảm bảo thanh trạng thái (status bar) và thanh điều hướng (nav bar)
+    // có icon màu tối cho hợp nền sáng
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        systemNavigationBarColor: _AppColors.surface,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+    );
+
     return Scaffold(
+      backgroundColor: _AppColors.bg,
+      // 🆕 Cho phép Scaffold mở rộng xuống dưới đáy (khi ẩn bottom nav)
+      resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
+          // Màn hình chính (các Tab)
           Offstage(
             offstage: _showTodayWorkout,
             child: IndexedStack(
@@ -120,6 +134,8 @@ class _AppShellState extends State<AppShell> {
               ],
             ),
           ),
+
+          // Màn hình Tập luyện
           Offstage(
             offstage: !_showTodayWorkout,
             child: TodayWorkoutScreen(
@@ -128,42 +144,94 @@ class _AppShellState extends State<AppShell> {
               logSetService: widget.logSetService,
               weightAdviceService: widget.weightAdviceService,
               userId: widget.userId,
-              onSetLogged: () => _hasNewLoggedSets = true,
+              onSetLogged: () {
+                _hasNewLoggedSets = true;
+              },
+              onClose: () {
+                _selectTab(0);
+              },
             ),
           ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _selectTab,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Trang chủ',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
-            label: 'Giáo án',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.insights_outlined),
-            selectedIcon: Icon(Icons.insights),
-            label: 'Tiến độ',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.fitness_center_outlined),
-            selectedIcon: Icon(Icons.fitness_center),
-            label: 'Bài tập',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Cài đặt',
-          ),
-        ],
-      ),
+
+      // 🆕 Ẩn Bottom Nav khi đang tập
+      bottomNavigationBar: _showTodayWorkout
+          ? null
+          : Container(
+              decoration: BoxDecoration(
+                color: _AppColors.surface,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: NavigationBar(
+                backgroundColor: _AppColors.surface,
+                elevation: 0,
+                selectedIndex: _selectedIndex,
+                onDestinationSelected: _selectTab,
+                indicatorColor: _AppColors.accent.withValues(alpha: 0.15),
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(
+                      Icons.home_outlined,
+                      color: _AppColors.textPrimary,
+                    ),
+                    selectedIcon: Icon(Icons.home, color: _AppColors.accent),
+                    label: 'Trang chủ',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(
+                      Icons.calendar_month_outlined,
+                      color: _AppColors.textPrimary,
+                    ),
+                    selectedIcon: Icon(
+                      Icons.calendar_month,
+                      color: _AppColors.accent,
+                    ),
+                    label: 'Giáo án',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(
+                      Icons.insights_outlined,
+                      color: _AppColors.textPrimary,
+                    ),
+                    selectedIcon: Icon(
+                      Icons.insights,
+                      color: _AppColors.accent,
+                    ),
+                    label: 'Tiến độ',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(
+                      Icons.fitness_center_outlined,
+                      color: _AppColors.textPrimary,
+                    ),
+                    selectedIcon: Icon(
+                      Icons.fitness_center,
+                      color: _AppColors.accent,
+                    ),
+                    label: 'Bài tập',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(
+                      Icons.settings_outlined,
+                      color: _AppColors.textPrimary,
+                    ),
+                    selectedIcon: Icon(
+                      Icons.settings,
+                      color: _AppColors.accent,
+                    ),
+                    label: 'Cài đặt',
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -176,9 +244,10 @@ class _SettingsScreen extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
+        style: TextStyle(
+          color: _AppColors.accent,
           fontWeight: FontWeight.bold,
+          fontSize: 14,
         ),
       ),
     );
@@ -192,13 +261,26 @@ class _SettingsScreen extends StatelessWidget {
     required String message,
   }) {
     return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: subtitle == null ? null : Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
+      leading: Icon(icon, color: _AppColors.textPrimary),
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: _AppColors.textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: subtitle == null
+          ? null
+          : Text(subtitle, style: const TextStyle(color: Colors.grey)),
+      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
       onTap: () {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(message)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: _AppColors.textPrimary,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       },
     );
   }
@@ -206,10 +288,21 @@ class _SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Cài đặt')),
+      backgroundColor: _AppColors.bg,
+      appBar: AppBar(
+        title: const Text(
+          'Cài đặt',
+          style: TextStyle(
+            color: _AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        backgroundColor: _AppColors.bg,
+        elevation: 0,
+        centerTitle: false,
+      ),
       body: ListView(
         children: [
-          // Profile Section
           _sectionTitle(context, 'Hồ sơ'),
           _soonTile(
             context,
@@ -218,9 +311,8 @@ class _SettingsScreen extends StatelessWidget {
             subtitle: 'Quản lý thông tin cá nhân',
             message: 'Màn hình hồ sơ — sắp ra mắt',
           ),
-          const Divider(),
+          const Divider(color: _AppColors.surface),
 
-          // Preferences Section
           _sectionTitle(context, 'Tùy chọn'),
           _soonTile(
             context,
@@ -243,9 +335,8 @@ class _SettingsScreen extends StatelessWidget {
             subtitle: 'Chế độ sáng',
             message: 'Cài đặt giao diện — sắp ra mắt',
           ),
-          const Divider(),
+          const Divider(color: _AppColors.surface),
 
-          // Data Section
           _sectionTitle(context, 'Dữ liệu'),
           _soonTile(
             context,
@@ -261,9 +352,8 @@ class _SettingsScreen extends StatelessWidget {
             subtitle: 'Tải lịch sử tập luyện',
             message: 'Xuất dữ liệu — sắp ra mắt',
           ),
-          const Divider(),
+          const Divider(color: _AppColors.surface),
 
-          // About Section
           _sectionTitle(context, 'Giới thiệu'),
           _soonTile(
             context,
@@ -285,7 +375,7 @@ class _SettingsScreen extends StatelessWidget {
             title: 'Chính sách riêng tư',
             message: 'Chính sách riêng tư — sắp ra mắt',
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 32),
         ],
       ),
     );

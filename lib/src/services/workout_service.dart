@@ -71,6 +71,7 @@ class WorkoutService {
     );
   }
 
+  /// 🆕 GHI ĐÈ: Xoá toàn bộ bài tập cũ của ngày hôm nay và thay bằng gợi ý AI
   Future<void> applySuggestionToToday({
     required String userId,
     required List<SuggestedExercise> exercises,
@@ -78,6 +79,7 @@ class WorkoutService {
   }) async {
     final dateOnly = DateTime(today.year, today.month, today.day);
 
+    // 1. Tìm plan hiện tại của hôm nay (theo ngày hoặc theo thứ)
     var plan = await repository.planByScheduledDate(userId, dateOnly);
     if (plan == null) {
       final byDay = await repository.plansForDay(userId, today.weekday);
@@ -86,6 +88,7 @@ class WorkoutService {
       }
     }
 
+    // 2. Nếu chưa có plan thì tạo mới
     if (plan == null) {
       plan = WorkoutPlan(
         id: 'ai-plan-${today.millisecondsSinceEpoch}',
@@ -98,15 +101,15 @@ class WorkoutService {
       await repository.savePlan(plan);
     }
 
+    // 3. XOÁ TOÀN BỘ BÀI CŨ CỦA PLAN (kể cả bài đã tập)
     final existing = await repository.exercisesForPlan(plan.id);
-    final existingNames = existing.map((e) => e.exercise.toLowerCase()).toSet();
-    var nextOrder = existing.isEmpty
-        ? 1
-        : existing.map((e) => e.sortOrder).reduce((a, b) => a > b ? a : b) + 1;
+    for (final e in existing) {
+      await repository.deleteExercise(e.id);
+    }
 
+    // 4. THÊM BÀI MỚI TỪ AI
+    var nextOrder = 1;
     for (final s in exercises) {
-      if (existingNames.contains(s.name.toLowerCase())) continue;
-
       final defaults = await _resolveDefaults(userId, s.name, existing);
 
       final finalSets = (s.sets > 0) ? s.sets : defaults.sets;
@@ -114,7 +117,7 @@ class WorkoutService {
       final finalWeight = (s.weight > 0) ? s.weight : defaults.weight;
 
       final exercise = PlannedExercise(
-        id: '${plan.id}-ai-$nextOrder',
+        id: '${plan.id}-ai-${DateTime.now().microsecondsSinceEpoch}-$nextOrder',
         planId: plan.id,
         exercise: s.name,
         muscleGroup: defaults.muscleGroup,
@@ -134,7 +137,7 @@ class WorkoutService {
     String name,
     List<PlannedExercise> existing,
   ) async {
-    String muscleGroup = 'Chest'; // Mặc định nếu không tìm thấy
+    String muscleGroup = 'Chest';
 
     for (final e in existing) {
       if (e.exercise.toLowerCase() == name.toLowerCase()) {
@@ -152,9 +155,6 @@ class WorkoutService {
         muscleGroup: muscleGroup,
       );
     }
-
-    // IN RA MÀN HÌNH ĐỂ DEBUG XEM NHÓM CƠ ĐANG LƯU LÀ GÌ
-    print('DEBUG AI: Bài $name thuộc nhóm cơ: "$muscleGroup"');
 
     double defaultWeight = 20.0;
     final mg = muscleGroup.toLowerCase();

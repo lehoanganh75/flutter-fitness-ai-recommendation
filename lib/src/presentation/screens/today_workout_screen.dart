@@ -1,5 +1,6 @@
 import 'package:fitness_recommendation/src/services/weight_advice_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/app_dependencies.dart' show kLocalUserId;
 import '../../domain/models/recommendation.dart';
@@ -7,6 +8,23 @@ import '../../domain/models/today_workout.dart';
 import '../../domain/models/workout.dart';
 import '../../services/log_set_service.dart';
 import '../../services/workout_service.dart';
+
+// ─────────────────────────────────────────────────────────────
+// COLORS (Light theme palette)
+// ─────────────────────────────────────────────────────────────
+class _AppColors {
+  static const bg = Color(0xFFF8F9FA); // Nền xám rất nhạt
+  static const surface = Colors.white; // Card trắng
+  static const surfaceHigh = Color(0xFFF1F3F5); // Xám nhạt cho active
+  static const stepperBg = Color(0xFFE9ECEF); // Nền nút +/-
+  static const textPrimary = Color(0xFF1F2937); // Chữ đậm
+  static const textSecondary = Color(0xFF6B7280); // Chữ xám
+  static const border = Color(0xFFE5E7EB); // Viền
+  static const accent = Color(0xFF16A34A); // Xanh lá
+  static const success = Color(0xFF16A34A);
+  static const danger = Color(0xFFDC2626);
+  static const purple = Color(0xFF8B5CF6);
+}
 
 class TodayWorkoutScreen extends StatefulWidget {
   const TodayWorkoutScreen({
@@ -21,6 +39,7 @@ class TodayWorkoutScreen extends StatefulWidget {
     this.errorMessage,
     this.idGenerator,
     this.onSetLogged,
+    this.onClose, // Callback xử lý khi bấm nút X
   });
 
   final TodayWorkout? workout;
@@ -32,9 +51,11 @@ class TodayWorkoutScreen extends StatefulWidget {
   final bool isLoading;
   final String? errorMessage;
   final String Function()? idGenerator;
-
-  /// Gọi sau mỗi lần lưu set thành công (để shell biết cần làm mới dữ liệu).
   final VoidCallback? onSetLogged;
+
+  /// Callback gọi khi bấm nút X (dùng khi màn hình nằm trong Tab).
+  /// Nếu không truyền, sẽ mặc định dùng Navigator.pop hoặc về Home.
+  final VoidCallback? onClose;
 
   @override
   State<TodayWorkoutScreen> createState() => _TodayWorkoutScreenState();
@@ -48,15 +69,16 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
   String? _loadError;
   bool _saving = false;
 
-  /// Trọng lượng của set gần nhất ở các buổi trước (để gợi ý mức tạ ban đầu).
   Map<String, double> _lastKnownWeight = {};
 
-  /// AI gợi ý cân nặng cho set tiếp theo (sau khi lưu set hiện tại).
   Recommendation? _advice;
   bool _adviceLoading = false;
 
-  final _weightController = TextEditingController();
-  final _repsController = TextEditingController();
+  // Dùng List thay vì TextEditingController để render Set Rows
+  List<double> _setWeights = [];
+  List<int> _setReps = [];
+
+  // Feedback
   final _feedbackController = TextEditingController();
 
   @override
@@ -70,14 +92,10 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
       _loading = true;
       _loadWorkout();
     }
-    // Không có workout lẫn service → giữ _workout = null để màn hình
-    // hiển thị trạng thái "Không có kế hoạch tập luyện".
   }
 
   @override
   void dispose() {
-    _weightController.dispose();
-    _repsController.dispose();
     _feedbackController.dispose();
     super.dispose();
   }
@@ -87,7 +105,9 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     if (_loading) {
       return const _StateScaffold(
         title: 'Tập luyện hôm nay',
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(
+          child: CircularProgressIndicator(color: _AppColors.accent),
+        ),
       );
     }
     if (_loadError != null) {
@@ -112,124 +132,279 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
       );
     }
 
-    final progress = _activeExercise.targetSets == 0
-        ? 0.0
-        : _completedSets / _activeExercise.targetSets;
-    final activeDone = _completedSets >= _activeExercise.targetSets;
+    final totalSets = workout.exercises
+        .map((e) => e.targetSets)
+        .fold<int>(0, (sum, s) => sum + s);
+    final totalDone = workout.exercises
+        .map((e) => (workout.loggedSetsByExercise[e.id] ?? const []).length)
+        .fold<int>(0, (sum, s) => sum + s);
+    final overallProgress = totalSets == 0 ? 0.0 : totalDone / totalSets;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tập luyện hôm nay'),
-        actions: [
-          IconButton(
-            tooltip: 'Lịch sử tập luyện',
-            onPressed: _showHistory,
-            icon: const Icon(Icons.history),
-            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          ),
-        ],
-      ),
+      backgroundColor: _AppColors.bg,
+      appBar: _buildAppBar(workout, totalDone, totalSets, overallProgress),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final horizontalPadding = constraints.maxWidth > 700 ? 48.0 : 20.0;
-            return ListView(
-              padding: EdgeInsets.fromLTRB(
-                horizontalPadding,
-                12,
-                horizontalPadding,
-                32,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+          children: [
+            // Chips danh sách bài tập
+            _ExerciseChipsRow(
+              exercises: _orderedExercises,
+              activeId: _activeExercise.id,
+              loggedSetsByExercise: workout.loggedSetsByExercise,
+              onTap: _switchToExercise,
+            ),
+            const SizedBox(height: 16),
+
+            // Exercise header
+            Text(
+              _activeExercise.exercise,
+              style: const TextStyle(
+                color: _AppColors.textPrimary,
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
               ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
               children: [
-                Text(
-                  workout.plan.title,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF1F2937),
-                  ),
+                _InfoPill(text: _activeExercise.muscleGroup),
+                _InfoPill(
+                  text:
+                      '${_activeExercise.targetSets} × ${_activeExercise.targetReps}',
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '${workout.exercises.length} bài · ${workout.muscleGroups.join(' · ')}',
-                  style: Theme.of(context).textTheme.bodyLarge
-                      ?.copyWith(color: const Color(0xFF475569)),
-                ),
-                const SizedBox(height: 24),
-                _ProgressCard(
-                  completedSets: _completedSets,
-                  totalSets: _activeExercise.targetSets,
-                  progress: progress.clamp(0.0, 1.0),
-                ),
-                const SizedBox(height: 20),
-                // 🆕 Recommendation Card (hiện nếu có advice)
-                if (_advice != null)
-                  _RecommendationCard(
-                    recommendation: _advice!,
-                    isLoading: _adviceLoading,
-                    onApply: _applyAdvice,
-                    onDismiss: _dismissAdvice,
-                  ),
-                if (_advice != null) const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Tiếp theo',
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    if (_currentExerciseIndex >= 0)
-                      Text(
-                        'Bài ${_currentExerciseIndex + 1} / ${_orderedExercises.length}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF64748B),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _ExerciseCard(exercise: _activeExercise),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _hasPreviousExercise
-                            ? _handlePreviousTap
-                            : null,
-                        icon: const Icon(Icons.skip_previous),
-                        label: const Text('Bài trước'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: _hasNextExercise ? _handleNextTap : null,
-                        icon: const Icon(Icons.skip_next),
-                        label: const Text('Bài kế tiếp'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                if (_isWorkoutCompleted)
-                  const _CompletionBanner()
-                else if (activeDone)
-                  _ExerciseDoneCard(totalSets: _activeExercise.targetSets)
-                else
-                  _SetForm(
-                    weightController: _weightController,
-                    repsController: _repsController,
-                    feedbackController: _feedbackController,
-                    onSave: _saving ? null : _saveSet,
+                if (_lastKnownWeight[_activeExercise.id] != null)
+                  _InfoPill(
+                    text:
+                        'Best: ${_formatWeight(_lastKnownWeight[_activeExercise.id]!)} kg',
+                    color: _AppColors.accent,
                   ),
               ],
-            );
-          },
+            ),
+            const SizedBox(height: 12),
+
+            // Gợi ý AI
+            if (_adviceLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _AppColors.success,
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Đang phân tích để gợi ý...',
+                      style: TextStyle(
+                        color: _AppColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (_advice != null)
+              _AdviceInlineBar(
+                advice: _advice!,
+                onApply: _applyAdvice,
+                onDismiss: _dismissAdvice,
+              ),
+
+            const SizedBox(height: 20),
+
+            // Table header
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  SizedBox(width: 24),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'KG',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      'REPS',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 52),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Danh sách Set Rows
+            ...List.generate(_activeExercise.targetSets, (index) {
+              final isDone = index < _completedSets;
+              final isActive = index == _completedSets && !_saving;
+              return _SetRow(
+                setIndex: index + 1,
+                weight: _setWeights.length > index ? _setWeights[index] : 0,
+                reps: _setReps.length > index ? _setReps[index] : 0,
+                isDone: isDone,
+                isActive: isActive,
+                saving: _saving,
+                onMinusWeight: () => setState(
+                  () => _setWeights[index] = (_setWeights[index] - 2.5).clamp(
+                    0,
+                    999,
+                  ),
+                ),
+                onPlusWeight: () => setState(
+                  () => _setWeights[index] = (_setWeights[index] + 2.5).clamp(
+                    0,
+                    999,
+                  ),
+                ),
+                onMinusReps: () => setState(
+                  () => _setReps[index] = (_setReps[index] - 1).clamp(1, 999),
+                ),
+                onPlusReps: () => setState(
+                  () => _setReps[index] = (_setReps[index] + 1).clamp(1, 999),
+                ),
+                onComplete: () => _saveSetFromRow(index),
+              );
+            }),
+
+            const SizedBox(height: 16),
+
+            // Ô Feedback (hiển thị sau khi đã tập ít nhất 1 set)
+            if (_completedSets > 0 &&
+                _completedSets < _activeExercise.targetSets)
+              _FeedbackInput(
+                controller: _feedbackController,
+                onSubmit: () {
+                  final text = _feedbackController.text.trim();
+                  if (text.isNotEmpty) {
+                    final lastWeight = _setWeights[_completedSets - 1];
+                    _requestWeightAdvice(lastWeight, text);
+                    FocusScope.of(context).unfocus();
+                  }
+                },
+              ),
+
+            if (_isWorkoutCompleted) ...[
+              const SizedBox(height: 24),
+              const _CompletionBanner(),
+            ],
+          ],
         ),
       ),
     );
+  }
+
+  PreferredSizeWidget _buildAppBar(
+    TodayWorkout workout,
+    int totalDone,
+    int totalSets,
+    double progress,
+  ) {
+    return AppBar(
+      backgroundColor: _AppColors.surface,
+      elevation: 0,
+      centerTitle: true,
+      leading: IconButton(
+        icon: const Icon(Icons.close, color: _AppColors.textPrimary),
+        onPressed: _handleClose,
+      ),
+      title: Column(
+        children: [
+          Text(
+            workout.plan.title,
+            style: const TextStyle(
+              color: _AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '$totalDone/$totalSets sets',
+            style: const TextStyle(
+              color: _AppColors.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        IconButton(
+          tooltip: 'Lịch sử',
+          icon: const Icon(Icons.history, color: _AppColors.textPrimary),
+          onPressed: _showHistory,
+        ),
+        const SizedBox(width: 4),
+      ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(6),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: progress.clamp(0.0, 1.0),
+              minHeight: 4,
+              backgroundColor: _AppColors.surfaceHigh,
+              color: _AppColors.accent,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  XỬ LÝ NÚT ĐÓNG (X)
+  // ══════════════════════════════════════════════════════════════
+  void _handleClose() {
+    // 1. Nếu có callback từ bên ngoài (ví dụ Shell truyền vào để chuyển Tab)
+    if (widget.onClose != null) {
+      widget.onClose!();
+      return;
+    }
+
+    // 2. Nếu có thể pop (màn hình được push)
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    // 3. Fallback: Nếu đang ở root (không thể pop) và không có callback
+    //    -> Cố gắng chuyển về route mặc định của app.
+    //    Em có thể thay '/' bằng route thực tế của Home trong app em.
+    try {
+      navigator.pushNamedAndRemoveUntil('/', (route) => false);
+    } catch (e) {
+      // Nếu app chưa cấu hình route '/', thử pop về màn hình gốc
+      debugPrint('Could not navigate to home: $e');
+      if (navigator.canPop()) navigator.popUntil((route) => route.isFirst);
+    }
   }
 
   Future<void> _loadWorkout() async {
@@ -254,9 +429,6 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     }
   }
 
-  /// Chỉ giữ các set của hôm nay. Nếu không lọc, bài đã tập đủ set ở tuần
-  /// trước sẽ bị coi là "đã xong" và không tập lại được.
-  /// Trọng lượng gần nhất của các buổi trước vẫn được giữ để gợi ý mức tạ.
   TodayWorkout _onlyToday(TodayWorkout source) {
     final now = DateTime.now();
     bool isToday(LoggedSet s) =>
@@ -311,14 +483,25 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
         sortedExercises.last;
     _completedSets =
         (workout.loggedSetsByExercise[_activeExercise.id] ?? const []).length;
-    _weightController.text = _weightFor(
-      workout,
-      _activeExercise,
-    ).toStringAsFixed(1);
-    _repsController.text = _activeExercise.targetReps.toString();
+    _rebuildSetState(workout, _activeExercise);
   }
 
-  /// Danh sách bài tập đã sắp theo thứ tự trong giáo án.
+  void _rebuildSetState(TodayWorkout workout, PlannedExercise exercise) {
+    final logged =
+        workout.loggedSetsByExercise[exercise.id] ?? const <LoggedSet>[];
+    final suggested = _weightFor(workout, exercise);
+
+    _setWeights = List<double>.generate(exercise.targetSets, (index) {
+      if (index < logged.length) return logged[index].weight;
+      return suggested;
+    });
+    _setReps = List<int>.generate(exercise.targetSets, (index) {
+      if (index < logged.length) return logged[index].reps;
+      return exercise.targetReps;
+    });
+    _feedbackController.clear();
+  }
+
   List<PlannedExercise> get _orderedExercises {
     final workout = _workout;
     if (workout == null) return const [];
@@ -326,18 +509,9 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
   }
 
-  /// Chỉ số của bài tập đang tập trong [_orderedExercises] (bắt đầu từ 0).
   int get _currentExerciseIndex =>
       _orderedExercises.indexWhere((e) => e.id == _activeExercise.id);
 
-  bool get _hasPreviousExercise => _currentExerciseIndex > 0;
-
-  bool get _hasNextExercise {
-    final index = _currentExerciseIndex;
-    return index >= 0 && index + 1 < _orderedExercises.length;
-  }
-
-  /// True khi mọi bài tập đã đủ số set (hiển thị realtime).
   bool get _isWorkoutCompleted {
     final workout = _workout;
     if (workout == null || workout.exercises.isEmpty) return false;
@@ -348,7 +522,6 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     return true;
   }
 
-  /// Bài chưa đủ set gần nhất sau bài hiện tại (quay vòng về đầu danh sách).
   PlannedExercise? _nextIncompleteExercise() {
     final workout = _workout;
     if (workout == null) return null;
@@ -364,54 +537,16 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     return null;
   }
 
-  void _handleNextTap() {
-    if (!_goToNextExercise()) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Đã chuyển sang: ${_activeExercise.exercise}'),
-        backgroundColor: const Color(0xFF16A34A),
-      ),
-    );
-  }
-
-  void _handlePreviousTap() {
-    if (!_goToPreviousExercise()) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Quay lại: ${_activeExercise.exercise}'),
-        backgroundColor: const Color(0xFF16A34A),
-      ),
-    );
-  }
-
-  bool _goToNextExercise() {
-    final index = _currentExerciseIndex;
-    final exercises = _orderedExercises;
-    if (index < 0 || index + 1 >= exercises.length) return false;
-    _switchToExercise(exercises[index + 1]);
-    return true;
-  }
-
-  bool _goToPreviousExercise() {
-    final index = _currentExerciseIndex;
-    final exercises = _orderedExercises;
-    if (index <= 0) return false;
-    _switchToExercise(exercises[index - 1]);
-    return true;
-  }
-
-  /// Chuyển bài tập đang active sang [exercise] và đồng bộ lại form.
   void _switchToExercise(PlannedExercise exercise) {
     final workout = _workout;
     if (workout == null) return;
+    if (exercise.id == _activeExercise.id) return;
     setState(() {
       _activeExercise = exercise;
       _completedSets =
           (workout.loggedSetsByExercise[exercise.id] ?? const []).length;
-      _weightController.text = _weightFor(workout, exercise).toStringAsFixed(1);
-      _repsController.text = exercise.targetReps.toString();
-      _feedbackController.clear();
-      _advice = null; // 🆕 Xoá card gợi ý khi chuyển bài
+      _rebuildSetState(workout, exercise);
+      _advice = null;
       _adviceLoading = false;
     });
   }
@@ -435,7 +570,11 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
           padding: const EdgeInsets.only(top: 16, bottom: 4),
           child: Text(
             exercise.exercise,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            style: const TextStyle(
+              color: _AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+              fontSize: 16,
+            ),
           ),
         ),
       );
@@ -448,6 +587,7 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Text(
               'Set ${set.setIndex}: ${_formatWeight(set.weight)} kg × ${set.reps}$feedback',
+              style: const TextStyle(color: _AppColors.textSecondary),
             ),
           ),
         );
@@ -457,6 +597,7 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: _AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -467,12 +608,19 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
           children: [
             const Text(
               'Lịch sử buổi tập hôm nay',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                color: _AppColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
             ),
             if (entries.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 16),
-                child: Text('Chưa có set nào được ghi hôm nay.'),
+                child: Text(
+                  'Chưa có set nào được ghi hôm nay.',
+                  style: TextStyle(color: _AppColors.textSecondary),
+                ),
               )
             else
               ...entries,
@@ -482,32 +630,37 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     );
   }
 
-  Future<void> _saveSet() async {
+  // LOGIC LƯU SET (từ Set Row)
+  Future<void> _saveSetFromRow(int index) async {
     final workout = _workout;
     if (workout == null) return;
-    if (_completedSets >= _activeExercise.targetSets) return;
+    if (index != _completedSets) return;
+    if (_saving) return;
 
-    final weight = double.tryParse(_weightController.text.replaceAll(',', '.'));
-    final reps = int.tryParse(_repsController.text);
-    if (weight == null || reps == null || weight < 0 || reps <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nhập trọng lượng và số lần hợp lệ.')),
-      );
+    HapticFeedback.mediumImpact();
+
+    final weight = _setWeights[index];
+    final reps = _setReps[index];
+    if (weight < 0 || reps <= 0) {
+      _showSnack('Trọng lượng và số lần phải hợp lệ.');
       return;
     }
+
+    // Lấy feedback hiện tại (nếu có)
+    final feedbackText = _feedbackController.text.trim();
+
     final loggedSet = LoggedSet(
       id:
           widget.idGenerator?.call() ??
           'set-${DateTime.now().microsecondsSinceEpoch}',
       exerciseId: _activeExercise.id,
-      setIndex: _completedSets + 1,
+      setIndex: index + 1,
       weight: weight,
       reps: reps,
-      feedbackText: _feedbackController.text.trim().isEmpty
-          ? null
-          : _feedbackController.text.trim(),
+      feedbackText: feedbackText.isEmpty ? null : feedbackText,
       loggedAt: DateTime.now(),
     );
+
     setState(() => _saving = true);
     try {
       await widget.logSetService?.logSet(
@@ -521,13 +674,10 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
       debugPrint('Save set failed: $error');
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Không thể lưu set. Vui lòng thử lại.')),
-      );
+      _showSnack('Không thể lưu set. Vui lòng thử lại.');
       return;
     }
 
-    // Tạo list mới thay vì .add() để không lỗi khi list gốc là const.
     final exerciseId = _activeExercise.id;
     workout.loggedSetsByExercise[exerciseId] = [
       ...(workout.loggedSetsByExercise[exerciseId] ?? const <LoggedSet>[]),
@@ -535,48 +685,49 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     ];
     widget.onSetLogged?.call();
 
+    // Nếu có feedback thì gọi AI gợi ý cho set tiếp theo
+    if (feedbackText.isNotEmpty) {
+      _feedbackController.clear();
+      _requestWeightAdvice(weight, feedbackText);
+    }
+
     final finishedName = _activeExercise.exercise;
     final finishedExercise = _completedSets + 1 >= _activeExercise.targetSets;
+
     setState(() {
       _saving = false;
       _completedSets = (_completedSets + 1).clamp(
         0,
         _activeExercise.targetSets,
       );
+      if (index + 1 < _activeExercise.targetSets) {
+        _setWeights[index + 1] = weight;
+        _setReps[index + 1] = reps;
+      }
     });
-    FocusScope.of(context).unfocus();
-
-    // 🆕 Nếu có feedback và chưa đủ targetSets → gọi AI để lấy gợi ý
-    final feedback = _feedbackController.text.trim();
-    if (feedback.isNotEmpty && !finishedExercise) {
-      _requestWeightAdvice(weight, feedback);
-    }
 
     if (!finishedExercise) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Đã lưu set $_completedSets'),
-          backgroundColor: const Color(0xFF16A34A),
-        ),
-      );
+      _showSnack('Đã lưu set $_completedSets');
       return;
     }
 
-    // Đủ set của bài hiện tại → chuyển sang bài chưa xong kế tiếp (nếu có).
     final next = _nextIncompleteExercise();
     if (next != null) {
-      _switchToExercise(next);
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
+      setState(() {
+        _activeExercise = next;
+        _completedSets =
+            (workout.loggedSetsByExercise[next.id] ?? const []).length;
+        _rebuildSetState(workout, next);
+        _advice = null;
+        _adviceLoading = false;
+      });
     }
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          next != null
-              ? 'Hoàn thành $finishedName — chuyển sang ${next.exercise}'
-              : 'Hoàn thành $finishedName — đã xong tất cả bài tập!',
-        ),
-        backgroundColor: const Color(0xFF16A34A),
-      ),
+    _showSnack(
+      next != null
+          ? 'Hoàn thành $finishedName — chuyển sang ${next.exercise}'
+          : 'Hoàn thành $finishedName — đã xong tất cả bài tập!',
     );
   }
 
@@ -585,7 +736,6 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
     String feedback,
   ) async {
     if (_adviceLoading) return;
-
     final service = widget.weightAdviceService;
     if (service == null) return;
 
@@ -604,236 +754,533 @@ class _TodayWorkoutScreenState extends State<TodayWorkoutScreen> {
         targetReps: _activeExercise.targetReps,
         feedback: feedback,
       );
-
       if (!mounted) return;
-
-      setState(() {
-        _advice = recommendation;
-      });
+      setState(() => _advice = recommendation);
     } catch (error, stackTrace) {
       debugPrint('[WeightAdvice] Request failed: $error');
       debugPrintStack(stackTrace: stackTrace);
     } finally {
-      if (mounted) {
-        setState(() {
-          _adviceLoading = false;
-        });
-      }
+      if (mounted) setState(() => _adviceLoading = false);
     }
   }
 
   void _applyAdvice() {
     final advice = _advice;
     if (advice == null) return;
-
     setState(() {
-      _weightController.text = advice.suggestedWeight.toStringAsFixed(1);
+      for (var i = _completedSets; i < _activeExercise.targetSets; i++) {
+        _setWeights[i] = advice.suggestedWeight;
+      }
       _advice = null;
     });
   }
 
-  /// 🆕 Bỏ qua gợi ý: ẩn card
-  void _dismissAdvice() {
-    setState(() {
-      _advice = null;
-    });
+  void _dismissAdvice() => setState(() => _advice = null);
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: _AppColors.textPrimary,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 }
 
-class _CompletionBanner extends StatelessWidget {
-  const _CompletionBanner();
-
-  @override
-  Widget build(BuildContext context) => Card(
-    color: const Color(0xFFDCFCE7),
-    child: const Padding(
-      padding: EdgeInsets.all(20),
-      child: Row(
-        children: [
-          Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 32),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Hoàn thành tất cả!',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                ),
-                SizedBox(height: 4),
-                Text('Bạn đã xong tất cả bài tập hôm nay.'),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _ExerciseDoneCard extends StatelessWidget {
-  const _ExerciseDoneCard({required this.totalSets});
-
-  final int totalSets;
-
-  @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Row(
-        children: [
-          const Icon(Icons.check_circle_outline, color: Color(0xFF16A34A)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Bài này đã đủ $totalSets set. Chuyển sang bài khác để tiếp tục.',
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-/// Widget hiển thị gợi ý từ AI.
-class _RecommendationCard extends StatelessWidget {
-  const _RecommendationCard({
-    required this.recommendation,
-    required this.isLoading,
-    required this.onApply,
-    required this.onDismiss,
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Set Row
+// ═══════════════════════════════════════════════════════════════
+class _SetRow extends StatelessWidget {
+  const _SetRow({
+    required this.setIndex,
+    required this.weight,
+    required this.reps,
+    required this.isDone,
+    required this.isActive,
+    required this.saving,
+    required this.onMinusWeight,
+    required this.onPlusWeight,
+    required this.onMinusReps,
+    required this.onPlusReps,
+    required this.onComplete,
   });
 
-  final Recommendation recommendation;
-  final bool isLoading;
-  final VoidCallback onApply;
-  final VoidCallback onDismiss;
-
-  String _reasonLabel(RecommendationReason reason) {
-    return switch (reason) {
-      RecommendationReason.USER_REPORTED_FATIGUE =>
-        'Dựa trên phản hồi về mức độ mệt mỏi của bạn.',
-      RecommendationReason.PROGRESSION =>
-        'Gợi ý tăng hoặc giảm tạ dựa trên tiến độ tập luyện.',
-      RecommendationReason.USER_PREFERENCE =>
-        'Gợi ý dựa trên sở thích tập luyện của bạn.',
-      RecommendationReason.NO_DATA =>
-        'Chưa có đủ dữ liệu lịch sử để đưa ra gợi ý chính xác.',
-    };
-  }
+  final int setIndex;
+  final double weight;
+  final int reps;
+  final bool isDone;
+  final bool isActive;
+  final bool saving;
+  final VoidCallback onMinusWeight;
+  final VoidCallback onPlusWeight;
+  final VoidCallback onMinusReps;
+  final VoidCallback onPlusReps;
+  final VoidCallback onComplete;
 
   @override
   Widget build(BuildContext context) {
-    final action = recommendation.action;
-    final icon = _actionIcon(action);
-    final color = _actionColor(action);
+    final bg = isActive ? _AppColors.surfaceHigh : _AppColors.surface;
+    final contentOpacity = isDone ? 0.5 : 1.0;
 
-    return Card(
-      color: color.withValues(alpha: 0.1),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: isActive
+            ? Border.all(color: _AppColors.accent, width: 1.5)
+            : Border.all(color: _AppColors.border, width: 1),
+      ),
+      child: Opacity(
+        opacity: contentOpacity,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Icon(icon, color: color, size: 28),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _actionLabel(action),
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Cân nặng: ${recommendation.suggestedWeight.toStringAsFixed(1)} kg',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
+            SizedBox(
+              width: 24,
+              child: Text(
+                '$setIndex',
+                style: const TextStyle(
+                  color: _AppColors.textSecondary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    '${(recommendation.confidence * 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _Stepper(
+                display: weight.toStringAsFixed(1),
+                isLocked: isDone || saving,
+                onMinus: onMinusWeight,
+                onPlus: onPlusWeight,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _Stepper(
+                display: reps.toString(),
+                isLocked: isDone || saving,
+                onMinus: onMinusReps,
+                onPlus: onPlusReps,
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 44,
+              height: 44,
+              child: isDone
+                  ? const Icon(
+                      Icons.check_circle,
+                      color: _AppColors.success,
+                      size: 30,
+                    )
+                  : isActive
+                  ? IconButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: saving ? null : onComplete,
+                      icon: saving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: _AppColors.accent,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.radio_button_unchecked,
+                              color: _AppColors.textSecondary,
+                              size: 30,
+                            ),
+                    )
+                  : const Icon(
+                      Icons.circle_outlined,
+                      color: _AppColors.border,
+                      size: 30,
                     ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _reasonLabel(recommendation.reason),
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: const Color(0xFF64748B)),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.tonal(
-                    onPressed: isLoading ? null : onApply,
-                    child: const Text('Áp dụng cân nặng'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: isLoading ? null : onDismiss,
-                    child: const Text('Bỏ qua'),
-                  ),
-                ),
-              ],
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  IconData _actionIcon(RecommendationAction action) {
-    return switch (action) {
-      RecommendationAction.INCREASE_WEIGHT => Icons.arrow_upward,
-      RecommendationAction.DECREASE_WEIGHT => Icons.arrow_downward,
-      RecommendationAction.REST => Icons.pause,
-      RecommendationAction.KEEP_WEIGHT => Icons.check,
-    };
-  }
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Stepper +/-
+// ═══════════════════════════════════════════════════════════════
+class _Stepper extends StatelessWidget {
+  const _Stepper({
+    required this.display,
+    required this.isLocked,
+    required this.onMinus,
+    required this.onPlus,
+  });
 
-  Color _actionColor(RecommendationAction action) {
-    return switch (action) {
-      RecommendationAction.INCREASE_WEIGHT => const Color(0xFF16A34A),
-      RecommendationAction.DECREASE_WEIGHT => const Color(0xFFDC2626),
-      RecommendationAction.REST => const Color(0xFF2563EB),
-      RecommendationAction.KEEP_WEIGHT => const Color(0xFF8B5CF6),
-    };
-  }
+  final String display;
+  final bool isLocked;
+  final VoidCallback onMinus;
+  final VoidCallback onPlus;
 
-  String _actionLabel(RecommendationAction action) {
-    return switch (action) {
-      RecommendationAction.INCREASE_WEIGHT => 'Nâng cân nặng',
-      RecommendationAction.DECREASE_WEIGHT => 'Hạ cân nặng',
-      RecommendationAction.REST => 'Nghỉ ngơi',
-      RecommendationAction.KEEP_WEIGHT => 'Giữ nguyên',
-    };
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _StepButton(icon: Icons.remove, onTap: isLocked ? null : onMinus),
+        Expanded(
+          child: Center(
+            child: Text(
+              display,
+              style: const TextStyle(
+                color: _AppColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        _StepButton(icon: Icons.add, onTap: isLocked ? null : onPlus),
+      ],
+    );
   }
 }
 
+class _StepButton extends StatelessWidget {
+  const _StepButton({required this.icon, this.onTap});
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: onTap == null ? Colors.transparent : _AppColors.stepperBg,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          icon,
+          size: 18,
+          color: onTap == null ? _AppColors.border : _AppColors.textPrimary,
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Exercise chips row
+// ═══════════════════════════════════════════════════════════════
+class _ExerciseChipsRow extends StatelessWidget {
+  const _ExerciseChipsRow({
+    required this.exercises,
+    required this.activeId,
+    required this.loggedSetsByExercise,
+    required this.onTap,
+  });
+
+  final List<PlannedExercise> exercises;
+  final String activeId;
+  final Map<String, List<LoggedSet>> loggedSetsByExercise;
+  final ValueChanged<PlannedExercise> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: exercises.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final e = exercises[i];
+          final done = (loggedSetsByExercise[e.id] ?? const []).length;
+          final completed = done >= e.targetSets;
+          final isActive = e.id == activeId;
+          return GestureDetector(
+            onTap: () => onTap(e),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: isActive ? _AppColors.accent : _AppColors.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isActive ? _AppColors.accent : _AppColors.border,
+                ),
+              ),
+              child: Row(
+                children: [
+                  if (completed) ...[
+                    Icon(
+                      Icons.check,
+                      size: 14,
+                      color: isActive ? Colors.white : _AppColors.success,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(
+                    e.exercise,
+                    style: TextStyle(
+                      color: isActive ? Colors.white : _AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$done/${e.targetSets}',
+                    style: TextStyle(
+                      color: isActive
+                          ? Colors.white70
+                          : _AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Info pill
+// ═══════════════════════════════════════════════════════════════
+class _InfoPill extends StatelessWidget {
+  const _InfoPill({required this.text, this.color});
+  final String text;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: _AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color ?? _AppColors.textSecondary,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Advice inline bar
+// ═══════════════════════════════════════════════════════════════
+class _AdviceInlineBar extends StatelessWidget {
+  const _AdviceInlineBar({
+    required this.advice,
+    required this.onApply,
+    required this.onDismiss,
+  });
+
+  final Recommendation advice;
+  final VoidCallback onApply;
+  final VoidCallback onDismiss;
+
+  Color _color(RecommendationAction action) {
+    return switch (action) {
+      RecommendationAction.INCREASE_WEIGHT => _AppColors.success,
+      RecommendationAction.DECREASE_WEIGHT => _AppColors.danger,
+      RecommendationAction.REST => const Color(0xFF2563EB),
+      RecommendationAction.KEEP_WEIGHT => _AppColors.purple,
+    };
+  }
+
+  String _label(RecommendationAction action) {
+    return switch (action) {
+      RecommendationAction.INCREASE_WEIGHT => '↑ Tăng',
+      RecommendationAction.DECREASE_WEIGHT => '↓ Giảm',
+      RecommendationAction.REST => '⏸ Nghỉ',
+      RecommendationAction.KEEP_WEIGHT => '✓ Giữ',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _color(advice.action);
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.auto_awesome, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${_label(advice.action)} → ${advice.suggestedWeight.toStringAsFixed(1)} kg',
+              style: TextStyle(
+                color: color,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onApply,
+            style: TextButton.styleFrom(
+              foregroundColor: color,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 30),
+            ),
+            child: const Text('Áp dụng', style: TextStyle(fontSize: 12)),
+          ),
+          IconButton(
+            onPressed: onDismiss,
+            icon: Icon(Icons.close, size: 16, color: color),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Feedback Input
+// ═══════════════════════════════════════════════════════════════
+class _FeedbackInput extends StatelessWidget {
+  const _FeedbackInput({required this.controller, required this.onSubmit});
+  final TextEditingController controller;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Cảm giác thế nào?',
+            style: TextStyle(
+              color: _AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  style: const TextStyle(color: _AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Ví dụ: Nặng quá, hụt hơi...',
+                    hintStyle: const TextStyle(color: _AppColors.textSecondary),
+                    filled: true,
+                    fillColor: _AppColors.bg,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onSubmitted: (_) => onSubmit(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: onSubmit,
+                icon: const Icon(Icons.send, color: _AppColors.accent),
+                style: IconButton.styleFrom(
+                  backgroundColor: _AppColors.accent.withValues(alpha: 0.1),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Gửi phản hồi để AI gợi ý mức tạ cho set tiếp theo.',
+            style: TextStyle(color: _AppColors.textSecondary, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WIDGET: Completion banner
+// ═══════════════════════════════════════════════════════════════
+class _CompletionBanner extends StatelessWidget {
+  const _CompletionBanner();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: _AppColors.success.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _AppColors.success.withValues(alpha: 0.3)),
+    ),
+    child: Row(
+      children: const [
+        Icon(Icons.check_circle, color: _AppColors.success, size: 32),
+        SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Hoàn thành tất cả!',
+                style: TextStyle(
+                  color: _AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Bạn đã xong tất cả bài tập hôm nay.',
+                style: TextStyle(color: _AppColors.textSecondary),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STATE WIDGETS
+// ═══════════════════════════════════════════════════════════════
 class _StateScaffold extends StatelessWidget {
   const _StateScaffold({required this.title, required this.child});
   final String title;
@@ -841,7 +1288,19 @@ class _StateScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(title)),
+    backgroundColor: _AppColors.bg,
+    appBar: AppBar(
+      backgroundColor: _AppColors.surface,
+      elevation: 0,
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: _AppColors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      iconTheme: const IconThemeData(color: _AppColors.textPrimary),
+    ),
     body: SafeArea(child: child),
   );
 }
@@ -863,157 +1322,21 @@ class _MessageState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 44, color: const Color(0xFFDC2626)),
+          Icon(icon, size: 44, color: _AppColors.danger),
           const SizedBox(height: 16),
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          Text(message, textAlign: TextAlign.center),
-        ],
-      ),
-    ),
-  );
-}
-
-class _ProgressCard extends StatelessWidget {
-  const _ProgressCard({
-    required this.completedSets,
-    required this.totalSets,
-    required this.progress,
-  });
-  final int completedSets;
-  final int totalSets;
-  final double progress;
-
-  @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Tiến độ bài tập',
-                style: Theme.of(context).textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              Text('$completedSets / $totalSets set'),
-            ],
-          ),
-          const SizedBox(height: 14),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 10,
-              backgroundColor: const Color(0xFFFECACA),
-              color: const Color(0xFF16A34A),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _ExerciseCard extends StatelessWidget {
-  const _ExerciseCard({required this.exercise});
-  final PlannedExercise exercise;
-
-  @override
-  Widget build(BuildContext context) => Card(
-    color: Colors.white,
-    child: ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      leading: const CircleAvatar(
-        backgroundColor: Color(0xFFFEF2F2),
-        child: Icon(Icons.fitness_center, color: Color(0xFFDC2626)),
-      ),
-      title: Text(
-        exercise.exercise,
-        style: const TextStyle(fontWeight: FontWeight.w700),
-      ),
-      subtitle: Text(
-        '${exercise.muscleGroup} · ${exercise.targetSets} set × ${exercise.targetReps} lần',
-      ),
-    ),
-  );
-}
-
-class _SetForm extends StatelessWidget {
-  const _SetForm({
-    required this.weightController,
-    required this.repsController,
-    required this.feedbackController,
-    required this.onSave,
-  });
-  final TextEditingController weightController;
-  final TextEditingController repsController;
-  final TextEditingController feedbackController;
-  final Future<void> Function()? onSave;
-
-  @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
           Text(
-            'Ghi nhận set',
-            style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: weightController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Trọng lượng (kg)',
-                    prefixIcon: Icon(Icons.monitor_weight_outlined),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: repsController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Số lần',
-                    prefixIcon: Icon(Icons.repeat),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: feedbackController,
-            minLines: 2,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Cảm giác thế nào? (tùy chọn)',
-              alignLabelWithHint: true,
-              prefixIcon: Icon(Icons.notes_outlined),
+            title,
+            style: const TextStyle(
+              color: _AppColors.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: FilledButton.icon(
-              onPressed: onSave,
-              icon: const Icon(Icons.check),
-              label: const Text('Lưu set'),
-            ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: _AppColors.textSecondary),
           ),
         ],
       ),
